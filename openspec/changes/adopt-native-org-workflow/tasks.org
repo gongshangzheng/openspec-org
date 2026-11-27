@@ -69,7 +69,7 @@ Relevant tests under test/commands/ demonstrate list, show and strict validate c
 :RECORDED_AT: 2026-11-27T03:35:54.080Z
 :END:
 `pnpm run build` 通过。Vitest 15 个文件、366 项通过，涵盖 `test/commands/org-artifact-selection.test.ts`、show/diff/spec/validate、list、schema/workflow、模板、路径校验、store 和启动依赖回归。并列两种扩展名时按 planning home 或 change schema 选择；删除选中目标后 list/show/strict validate 不回退。`git diff --check` 通过。
-* TODO Verify both workflows on Windows and Unix
+* DONE Verify both workflows on Windows and Unix
 :PROPERTIES:
 :TASK_ID: 1.4
 :END:
@@ -84,3 +84,10 @@ Record passing Windows and Unix runs of default Markdown and opt-in Org from cha
 :RECORDED_AT: 2026-11-27T03:50:13.466Z
 :END:
 新增 `test/cli-e2e/markdown-org-workflow.test.ts`，两例从 init/new change 到 status、嵌套规格 list/show、主规格和 delta 严格验证均在 macOS 通过。Org 例使用 CRLF 和 Markdown 干扰文件；Markdown 例确认默认 schema、路径与原样输出。`pnpm test` 在 macOS：253 个文件通过、1 个跳过；6525 项通过、19 项跳过。现有 `.github/workflows/ci.yml` 包含 Windows、macOS、Linux 的 `pnpm test` 矩阵；未推送或运行远端 CI，Windows 结果未取得，不标 DONE。
+*** [PASS] 2026-11-27T06:08:07.086Z 合并提交通过 Windows、macOS 和 Linux 双格式验收
+:PROPERTIES:
+:RESULT: pass
+:CRITERIA_SHA256: 3ecb85aeba461081cad35eb9db3ba176f06a22dd760c4cd641168a1598bfa090
+:RECORDED_AT: 2026-11-27T06:08:07.086Z
+:END:
+GitHub Actions CI #45939732034（https://github.com/gongshangzheng/openspec-org/actions/runs/45939732034）在 fork main 的合并提交 `a51e7a3b65ed4f71b4afe03109e692bc8387f934` 上成功。已核对 `Test (windows-pwsh)`、`Test (macos-bash)` 和 `Test (linux-bash)` 的 `Run tests` 步骤均为 success；另两组 Linux Node 版本亦通过。该提交包含 `test/cli-e2e/markdown-org-workflow.test.ts`，覆盖默认 Markdown 原样输出和 opt-in Org 的 CRLF、嵌套规格发现与严格校验。本地提交 `80365030` 与受测远端提交的文件树均为 `2f7dc5dc192a3a288207f3479f10f64fdc222085`。
