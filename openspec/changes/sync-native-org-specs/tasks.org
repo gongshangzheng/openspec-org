@@ -46,7 +46,7 @@
 :RECORDED_AT: 2026-11-27T11:29:41.363Z
 :END:
 `node build.js`、`./node_modules/.bin/eslint src/`、`bash`/`zsh`/`fish`/`powershell` 补全脚本生成、`node bin/openspec.js validate sync-native-org-specs --strict` 与 `git diff --check` 均通过；`test/commands/sync.test.ts`、`test/core/completions/`、`test/core/templates/` 与 `test/core/init.test.ts`（串行复验 167/167 通过）随全量回归通过，覆盖 `openspec sync` 文本/JSON、`--store`、保持变更活跃、缺少 delta/跨格式报错及补全与技能同步。
-* TODO 在 Windows 和 Unix 验证跨平台同步旅程
+* DONE 在 Windows 和 Unix 验证跨平台同步旅程
 :PROPERTIES:
 :TASK_ID: 1.4
 :END:
@@ -61,3 +61,10 @@
 :RECORDED_AT: 2026-11-27T11:30:07.726Z
 :END:
 新增 `test/cli-e2e/sync-native-org-specs.test.ts` 并完成 macOS 全量复验：260 个测试文件（6551 项）通过 + 串行重跑 `test/core/init.test.ts`（167/167 通过；全量并发期曾出现 `--tools all` 单次 10s 超时）；1 个发布升级测试文件（19 项）按条件跳过。覆盖嵌套 `specs/**/spec.org`、CRLF 保真、`--store`、越界与跨格式拦截、Markdown 回归及变更保持活跃。待提交推送并跑通 Windows 与 Unix 远端 CI 矩阵。
+*** [PASS] 2026-11-27T12:14:59.397Z PR #3 跨平台 CI 矩阵全量通过（Windows、macOS、Linux）
+:PROPERTIES:
+:RESULT: pass
+:CRITERIA_SHA256: deea9a87a70affb23e4cf3ac90a664bcb9a56f30396a96a08cbc2003f625bc93
+:RECORDED_AT: 2026-11-27T12:14:59.397Z
+:END:
+PR #3（`ci/org-task-editing-and-spec-sync`，commit `bd2451ff2cc256c4b5e28f1d3f12ac65374e4075`）GitHub Actions 跨平台 CI（https://github.com/gongshangzheng/openspec-org/actions/runs/45992636153）全量通过：`Lint & Type Check`、`Nix Flake Validation`、`Test (windows-pwsh)`、`Test (macos-bash)`、`Test (linux-bash)`、`Test (linux-bash-node22)`、`Test (linux-bash-node24)`、`Upgrade from releases (ubuntu-latest)`、`Upgrade from releases (windows-latest)` 均返回 success；覆盖 `test/cli-e2e/sync-native-org-specs.test.ts` 中的子目录与 `--store` 同步嵌套 `specs/**/spec.org`、CRLF 保真、越界拦截、跨格式拒绝、Markdown 同步回归，以及原变更保持活跃且未生成冗余文件。

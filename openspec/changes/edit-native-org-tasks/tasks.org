@@ -46,7 +46,7 @@
 :RECORDED_AT: 2026-11-27T11:29:38.602Z
 :END:
 `node build.js`、`./node_modules/.bin/eslint src/`、`bash`/`zsh`/`fish`/`powershell` 补全脚本生成、`node bin/openspec.js validate edit-native-org-tasks --strict` 与 `git diff --check` 均通过；`test/commands/org-task-editing.test.ts`、`test/commands/artifact-workflow.test.ts`（串行复验 87/87 通过）、`test/core/completions/`、`test/core/templates/` 随全量回归通过，覆盖 `--preview`、TTY/非交互双重确认、取消退出码 130、`tasks.org` 模板对齐及补全与 12 份技能同步。
-* TODO 在 Windows 和 Unix 验证原生任务编辑旅程
+* DONE 在 Windows 和 Unix 验证原生任务编辑旅程
 :PROPERTIES:
 :TASK_ID: 1.4
 :END:
@@ -61,3 +61,10 @@
 :RECORDED_AT: 2026-11-27T11:30:04.451Z
 :END:
 新增 `test/cli-e2e/org-task-editing.test.ts` 并完成 macOS 全量复验：259 个测试文件（6558 项）通过 + 串行重跑 `test/commands/artifact-workflow.test.ts`（87/87 通过；`keeps Markdown by default` 1580ms，全量并发期曾出现单次 10s 超时）；1 个发布升级测试文件（19 项）按条件跳过。覆盖 CRLF+BOM、嵌套目录、`--store`、完整写操作与 `next`、取消与冲突不落盘、Markdown 回归及无 `tasks.md` 投影。待提交推送并跑通 Windows 与 Unix 远端 CI 矩阵。
+*** [PASS] 2026-11-27T12:13:18.837Z PR #3 跨平台 CI 矩阵全量通过（Windows、macOS、Linux）
+:PROPERTIES:
+:RESULT: pass
+:CRITERIA_SHA256: 2e232f1bde2563661f890a85fa3ac8bed12a17b88616c960a16bf0ab69ab931c
+:RECORDED_AT: 2026-11-27T12:13:18.837Z
+:END:
+PR #3（`ci/org-task-editing-and-spec-sync`，commit `bd2451ff2cc256c4b5e28f1d3f12ac65374e4075`）GitHub Actions 跨平台 CI（https://github.com/gongshangzheng/openspec-org/actions/runs/45992636153）全量通过：`Lint & Type Check`、`Nix Flake Validation`、`Test (windows-pwsh)`、`Test (macos-bash)`、`Test (linux-bash)`、`Test (linux-bash-node22)`、`Test (linux-bash-node24)`、`Upgrade from releases (ubuntu-latest)`、`Upgrade from releases (windows-latest)` 均返回 success；覆盖 `test/cli-e2e/org-task-editing.test.ts` 中的 CRLF/BOM 保真、嵌套目录、`--store` 跨目录写入、create/edit/remove/reorder/move/split/`next` 推进、取消与依赖冲突零落盘、Markdown 回归以及无 `tasks.md` 投影。

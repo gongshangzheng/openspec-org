@@ -16,7 +16,7 @@
 
 - **切片 2a（当前：[read-native-org-tasks](../../changes/read-native-org-tasks/proposal.md)）**：只交付原生 `tasks.org` 只读解析器、`openspec task list/show/next`、变更列表任务进度和 Org apply 指令，供后续写操作复用。
 - **切片 2b（任务文本与结构写入）**：集中实现跨平台文件锁（包含锁超时与陈旧锁信息，避免 Windows 文件重命名冲突）、不可变快照校验、预览与真实确认边界以及安全原子写。在此基础上提供任务新建、文本编辑、移除、同组重排、跨组移动、拆分和依赖约束检查，并将 `schemas/spec-driven-org/templates/tasks.org` 与默认生成样式统一。
-- **切片 2c（验收证据与完成门禁）**：实现追加式 `验收结果`、`CRITERIA_SHA256` 规范化与变更失效判定、受控 `TODO`/`DONE` 状态流转，以及供阶段 3 消费的归档就绪检查。
+- **切片 2c（验收证据与完成门禁）**：实现追加式 `验收结果`、`CRITERIA_SHA256` 规范化与变更失效判定、受控 `TODO`/`DONE` 状态流转，以及供阶段 3 消费的归档就绪检查；同时补齐 `schemas/spec-driven-org/schema.yaml` 中各制品与 `apply` 的 Org 撰写和执行指引（语义级原子化、文件落点与并行边界设计、`openspec task` 流转、标 `DONE` 前置检查、拆分/重排及用户推翻 `DONE` 项时的回退闭环）。
 
 ### 任务模型与子节契约
 
@@ -37,7 +37,7 @@ Org change 的任务全部保留在各自的 `tasks.org` 中，使用原生 `TOD
 - **同组重排**不要求任务连续，未选中的任务保持原有相对顺序。**跨组移动**必须明确目标分组与插入位置，例如将 `1.2` 移到验证组并放在 `3.1` 之前；不沿用旧扩展对连续同级任务的限制，也不修改旧扩展。
 - **目标分组寻址**按分组标题或路径（例如 `验证` 或 `父组/子组`）定位。遇到重名分组时 CLI 直接报错，要求改用完整路径或锚点任务定位；插入位置支持组首、组尾或锚点任务前后（例如 `--before <id>`、`--after <id>`）。
 - **整棵子树搬移**以任务子树为单位调整结构所需的标题级别，完整保留 `:TASK_ID:`、`TODO`/`DONE` 状态、正文、验收标准、依赖引用和历史证据，不自动重编号或重写历史证据。
-- **文档顺序与硬依赖**决定推进次序：CLI 默认按 `tasks.org` 的文档顺序推进，`:TASK_ID:` 仅作稳定引用，`org-num-mode` 仅用于显示标题编号。显式依赖是硬约束，若重排或移动后任务排在其前置任务之前，CLI 拒绝操作并指出冲突，不自动修改依赖或顺序。现有 Markdown 工作流保持不变。
+- **文档顺序与硬依赖**决定推进次序：CLI 默认按 `tasks.org` 的文档顺序推进，`:TASK_ID:` 仅作稳定引用，`org-num-mode` 仅用于显示标题编号。显式依赖是硬约束，若重排或移动后任务排在其前置任务之前，CLI 拒绝操作并指出冲突，不自动修改依赖或顺序。并行性按轻量方案落地：不在 `tasks.org` 新增专用并行属性，硬依赖继续用 `:DEPENDS_ON:` 表达，可并行任务组与独占文件归属记录在 `design.org` 中，而 `openspec task next` 保持严格按文档顺序推进（后续如有需要再补只读的依赖就绪列表）。现有 Markdown 工作流保持不变。
 - **结构预览与验收**展示任务原位置、目标分组、插入位置及调整后的执行顺序。验收需覆盖同组非连续重排、跨组移动后 `next` 的选择、任务内容与证据保留，以及依赖冲突、取消操作和过期预览均不落盘。
 
 ### 证据与完成门禁
@@ -51,11 +51,11 @@ Org change 的任务全部保留在各自的 `tasks.org` 中，使用原生 `TOD
 ### 切片划分
 
 - **切片 `3a`（Org `spec.org` 保真写回与 `sync`）**：围绕 `specs/**/spec.org` 的 delta 对账与保真写回，只依赖阶段 1 的 Org 规格解析器，文件归属与任务写入互不重叠，可在独立分支或 worktree 上与切片 `2b` / `2c` 并行推进。写回 `spec.org` 时，仅更新受影响的 requirement 块，保留文件头（如 `#+TITLE:`、`#+STARTUP:`）、未改动的 requirement 原文、行内标记和原换行符（LF/CRLF）。
-- **切片 `3b`（Org `archive` 证据门禁接入与派生 Org schema 泛化）**：待切片 `2c` 与 `3a` 均落地后合流，将 Org `archive` 的任务就绪检查接入切片 `2c` 基于证据验证的就绪结果（而非仅看原始 `DONE` 数量），同时保持 `--no-validate`、警告与阻断边界清晰。从这一步起，将工作流判定从字面量 `spec-driven-org` 泛化为按 schema 声明的 `.org` 产物识别，从而一致支持通过 `openspec schema fork spec-driven-org` 派生的自定义 Org schema。验收需验证先 `sync` 后 `archive`（含已应用 delta 与冲突场景），并在保留 Markdown 回归的前提下完整演示一次从脚手架、任务证据到归档的端到端 Org 生命周期。
+- **切片 `3b`（Org `archive` 证据门禁接入与派生 Org schema 泛化）**：待切片 `2c` 与 `3a` 均落地后合流，将 Org `archive` 的任务就绪检查接入切片 `2c` 基于证据验证的就绪结果（而非仅看原始 `DONE` 数量），同时保持 `--no-validate`、警告与阻断边界清晰。从这一步起，将工作流判定从字面量 `spec-driven-org` 泛化为按 schema 声明的 `.org` 产物识别，从而一致支持通过 `openspec schema fork spec-driven-org` 派生的自定义 Org schema。全流程闭环跑通后，这一步同时对齐共享 workflow skills 与 OPSX 命令模板（`src/core/templates/workflows/*.ts` 及重新生成的 `skills/` 与一致性校验哈希），让 `apply-change`、`propose`、`update-change`、`verify-change`、`sync-specs` 和 `archive-change` 按选定 schema 分流到 `openspec task`、`openspec sync` 与基于证据的归档门禁，不再写死 Markdown 复选框。验收需验证先 `sync` 后 `archive`（含已应用 delta 与冲突场景），并在保留 Markdown 回归的前提下完整演示一次从脚手架、任务证据到归档的端到端 Org 生命周期。
 
 ## 4. 项目级宿主与编辑器适配
 
-适配器层始终以现有 CLI 作为状态、预览与校验的唯一所有者。产品本身不包含 Git worktree 工作流、worktree 预检工具、远端操作或子代理编排；CLI 仅检查规划目录、会话与文件快照。工作流指引放在生成的 skills、OPSX prompts 和指令模板中，不使用 hooks 或动态规则注入。各宿主均须保留既有信任规则，写入变更前要求真实用户确认（所有宿主共享同一确认契约，绝不把 `previewHash` 等同于同意），且不改动无关配置与用户级全局配置。以下源码目录在此作为建议提出，实际新增前须在对应 change 的 `design` 中确认。
+适配器层始终以现有 CLI 作为状态、预览与校验的唯一所有者。产品本身不包含 Git worktree 工作流、worktree 预检工具、远端操作或子代理编排；CLI 仅检查规划目录、会话与文件快照。工作流指引放在生成的 skills、OPSX prompts 和指令模板中，不使用 hooks 或动态规则注入。整体规则按职责分层落地：结构、依赖、确认与证据等硬约束由 CLI 强制执行；Org 工作流语义留在 `schemas/spec-driven-org/schema.yaml` 与生成的 skills / OPSX prompts 中；语言、汇报格式与测试/归档偏好等项目级习惯通过 `openspec/config.yaml`（`context`、`rules.<artifact>`、`operations.apply.guidance`、`operations.archive.guidance`）按项目注入；跨 OpenSpec 的通用编码与沟通纪律、subagent 派发规范及 Git/worktree/远端授权红线则继续留在外部全局规则中。各宿主均须保留既有信任规则，写入变更前要求真实用户确认（所有宿主共享同一确认契约，绝不把 `previewHash` 等同于同意），且不改动无关配置与用户级全局配置。以下源码目录在此作为建议提出，实际新增前须在对应 change 的 `design` 中确认。
 
 ### 切片划分与并行结构
 
