@@ -60,7 +60,7 @@ GitHub Actions CI #45962063198 (https://github.com/gongshangzheng/openspec-org/a
 :RECORDED_AT: 2026-11-27T09:09:30.861Z
 :END:
 `node build.js`、`./node_modules/.bin/eslint src/`、`node scripts/generate-skillssh.mjs`（更新 12 个技能 SKILL.md）、`node scripts/regen-parity-hashes.mjs`（更新 36 项哈希）、四种壳层补全脚本生成（`bash`、`zsh`、`fish`、`powershell`）、`node bin/openspec.js validate read-native-org-tasks --strict` 与 `git diff --check` 均通过。定向回归 `./node_modules/.bin/vitest run test/core/completions test/core/templates test/commands/org-task-reading.test.ts test/commands/apply-instructions-tasks.test.ts test/cli-e2e/org-task-reading.test.ts test/core/global-skills.test.ts` 39 个文件 763 项全部通过；完整回归 `./node_modules/.bin/vitest run` 256 个文件 6536 项通过（1 个发布升级测试文件 19 项按环境条件跳过）。
-* TODO 在 Windows 和 Unix 验证原生任务读取旅程
+* DONE 在 Windows 和 Unix 验证原生任务读取旅程
 :PROPERTIES:
 :TASK_ID: 1.4
 :END:
@@ -75,3 +75,10 @@ GitHub Actions CI #45962063198 (https://github.com/gongshangzheng/openspec-org/a
 :RECORDED_AT: 2026-11-27T07:48:21.639Z
 :END:
 新增 `test/cli-e2e/org-task-reading.test.ts`，从项目子目录通过真实 CLI 验证 CRLF Org 源、list/show/next、路径和行号、进度与 apply、Markdown 回归以及无 Markdown 投影。`pnpm run lint`、`pnpm run build`、`node bin/openspec.js validate read-native-org-tasks --strict` 和 `git diff --check` 均通过。macOS 相关回归 26 个文件、505 项通过；当前提交尚未推送，无 Windows CI 结果。
+*** [PASS] 2026-11-27T09:42:57.377Z Windows 与 Unix CI 矩阵通过原生 Org 任务读取旅程与全量回归
+:PROPERTIES:
+:RESULT: pass
+:CRITERIA_SHA256: ae9811314bad6cb26b2f9962bb62db60cf6e717e87a6b9fe70a8dbd65c3c3203
+:RECORDED_AT: 2026-11-27T09:42:57.377Z
+:END:
+GitHub Actions CI #45974211407 (https://github.com/gongshangzheng/openspec-org/actions/runs/45974211407) 在分支 ci/read-native-org-tasks 提交 ff7ed2bc26b3a71e17b69a20308485732ae4df84 上全部通过：Test (windows-pwsh) (11m9s)、Test (macos-bash) (5m9s)、Test (linux-bash) (4m10s)、Test (linux-bash-node22) (3m5s)、Test (linux-bash-node24) (3m34s)、Nix Flake Validation (2m45s)、Lint & Type Check (31s) 及 Upgrade from releases (ubuntu-latest / windows-latest) 均为 success。覆盖 test/cli-e2e/org-task-reading.test.ts 的 CRLF、子目录定位、list/show/next、路径与行号、进度与 apply、Markdown 回归及无 tasks.md 投影。
