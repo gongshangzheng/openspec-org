@@ -1,0 +1,84 @@
+* DONE 读取原生 Org 任务并判定下一项
+:PROPERTIES:
+:TASK_ID: 1.1
+:END:
+在 `src/core/parsers/org-tasks.ts` 实现任务读取和下一项判定；必要时复用 `src/core/parsers/org-structure.ts` 的标题扫描。
+** 验收标准
+`test/core/parsers/org-tasks.test.ts` 验证分组、直接正文和描述子节、直属验收标准、原始行内标记、CRLF 下的标题行号及重复 ID 诊断。读取器保留直属 `验收结果` 中的历史记录原文和自定义小节的标题与内容，不计算证据有效性；证据区中的子标题不计为任务。ID 乱序时按文档选首条待办，未完成或不存在的依赖阻塞，不跳项；空清单和全部完成有不同结果。
+
+** 验收结果
+*** [PASS] 2026-11-27T07:34:59.317Z 原生 Org 任务解析与 next 判定通过
+:PROPERTIES:
+:RESULT: pass
+:CRITERIA_SHA256: 34680eba211d28260259c432367136650687ba26ae4c2160e69d73888b468863
+:RECORDED_AT: 2026-11-27T07:34:59.317Z
+:END:
+`pnpm run build && pnpm exec vitest run test/core/parsers && git diff --check` 通过：15 个文件、254 项测试。`org-tasks.test.ts` 验证分组、两种描述、直属验收标准和行内标记、按原换行保留证据与自定义小节、排除证据与示例内伪任务、CRLF 行号、重复 ID、文档顺序、阻塞与未知依赖，以及空清单与全部完成。
+* DONE 按工作流计算变更列表任务进度
+:PROPERTIES:
+:TASK_ID: 1.2
+:END:
+在 `src/utils/task-progress.ts` 复用现有 schema 追踪文件定位，提供原生 Org 读取结果；将 `src/core/list.ts` 和 `src/commands/change.ts` 的列表接入，保持归档门禁不变。
+** 验收标准
+`test/utils/task-progress.test.ts` 和受影响的列表测试中，Markdown 和 Org change 混合列举得到各自正确的进度；Org 文件缺失或两种文件并存时均不采用 Markdown 代替，所选 Markdown 工作流维持原输出。
+
+** 验收结果
+*** [PASS] 2026-11-27T07:38:49.849Z 混合列表按 schema 计算进度
+:PROPERTIES:
+:RESULT: pass
+:CRITERIA_SHA256: eb606285cbe09f29f52fee65ad42d68615a18762bec1d3105d9f13cc4ee79ad5
+:RECORDED_AT: 2026-11-27T07:38:49.849Z
+:END:
+`pnpm run build && pnpm exec vitest run test/utils/task-progress.test.ts test/core/list.test.ts test/core/commands/change-command.show-validate.test.ts && git diff --check` 通过 104 项。真实 CLI 同时列出 Markdown 1/1、Org 1/2 和缺少 Org 文件的 0/0；两种扩展名并存仍各读选定源，Markdown 现有列表不变。归档原计数入口未改。
+* DONE 接入只读任务命令和 Org apply 指令
+:PROPERTIES:
+:TASK_ID: 1.3
+:END:
+在 `src/commands/task.ts` 和 `src/cli/index.ts` 接入 task list/show/next。在 `src/commands/workflow/instructions.ts` 让 apply 复用从 1.2 取得的原生任务、进度和下一项。
+** 验收标准
+`test/commands/org-task-reading.test.ts` 与 `test/commands/apply-instructions-tasks.test.ts` 使用真实 CLI 验证文本和 JSON、按 ID 读取、源位置、阻塞前置 ID、缺文件与非 Org 提示、apply 与 task next 一致。`task show` 默认仅返回描述和验收标准；`--sections` 支持逗号分隔的 `description`、`criteria`、`evidence`、`custom`，或单独使用 `all`。验证两种输出筛选一致、固定元数据始终保留、未知选项报错、证据原样返回，自定义小节保留标题和正文，`task list` 仍只列摘要。两种工作流均不改写任务文件或生成投影，Markdown apply 回归通过。
+
+** 验收结果
+*** [PASS] 2026-11-27T07:45:24.771Z 只读 task CLI、详情筛选与 apply 一致
+:PROPERTIES:
+:RESULT: pass
+:CRITERIA_SHA256: ec7e37ee85eed90ddfc598d91cdcdcd6176f4a9af8c1486069617512ed3487e7
+:RECORDED_AT: 2026-11-27T07:45:24.771Z
+:END:
+`pnpm run build` 通过。`pnpm exec vitest run test/commands/org-task-reading.test.ts test/commands/apply-instructions-tasks.test.ts test/commands/apply-instructions-blocked.test.ts test/commands/apply-instructions-warnings.test.ts test/core/cli-is-json-run.test.ts test/cli-e2e/startup-modules.test.ts`：6 文件、82 项通过。覆盖文本和 JSON 筛选、固定字段、CRLF 证据原文、custom 标题和正文、非法选择、缺失 Org 文件、Markdown change 拒绝提示、list 摘要、apply/next 一致、无文件变更或投影，以及 Markdown apply 和 CLI 启动回归。`git diff --check` 通过。
+*** [FAIL] 2026-11-27T08:32:32.796Z 远端 CI 暴露补全注册表、--store 清单与 Windows 短路径回归
+:PROPERTIES:
+:RESULT: fail
+:CRITERIA_SHA256: ec7e37ee85eed90ddfc598d91cdcdcd6176f4a9af8c1486069617512ed3487e7
+:RECORDED_AT: 2026-11-27T08:32:32.796Z
+:END:
+GitHub Actions CI #45962063198 (https://github.com/gongshangzheng/openspec-org/actions/runs/45962063198, commit 5b225f58) 失败：5 个测试矩阵任务均在 test/core/completions/command-registry.test.ts 失败（task 未登记在 COMMAND_REGISTRY，且 task list/next/show 未列入 --store 清单和 STORE_SELECTION_GUIDANCE）；Test (windows-pwsh) 另在 test/commands/apply-instructions-tasks.test.ts:46 失败（fs.realpathSync 返回 8.3 短路径 RUNNER~1，与 CLI 返回的 runneradmin 不一致）。
+*** [PASS] 2026-11-27T09:09:30.861Z 补齐 task 补全注册表、--store 模板同步与 Windows native realpath 修复
+:PROPERTIES:
+:RESULT: pass
+:CRITERIA_SHA256: ec7e37ee85eed90ddfc598d91cdcdcd6176f4a9af8c1486069617512ed3487e7
+:RECORDED_AT: 2026-11-27T09:09:30.861Z
+:END:
+`node build.js`、`./node_modules/.bin/eslint src/`、`node scripts/generate-skillssh.mjs`（更新 12 个技能 SKILL.md）、`node scripts/regen-parity-hashes.mjs`（更新 36 项哈希）、四种壳层补全脚本生成（`bash`、`zsh`、`fish`、`powershell`）、`node bin/openspec.js validate read-native-org-tasks --strict` 与 `git diff --check` 均通过。定向回归 `./node_modules/.bin/vitest run test/core/completions test/core/templates test/commands/org-task-reading.test.ts test/commands/apply-instructions-tasks.test.ts test/cli-e2e/org-task-reading.test.ts test/core/global-skills.test.ts` 39 个文件 763 项全部通过；完整回归 `./node_modules/.bin/vitest run` 256 个文件 6536 项通过（1 个发布升级测试文件 19 项按环境条件跳过）。
+* DONE 在 Windows 和 Unix 验证原生任务读取旅程
+:PROPERTIES:
+:TASK_ID: 1.4
+:END:
+在 `test/cli-e2e/org-task-reading.test.ts` 用现有 `.github/workflows/ci.yml` 测试矩阵，验证从子目录定位含 CRLF 的任务文件。
+** 验收标准
+保留 Windows 与 Unix CI 实测记录：Org 的 list/show/next、任务进度和行号均正确，Markdown 项目回归通过，Org 旅程未生成 `tasks.md`。
+** 验收结果
+*** [PARTIAL] 2026-11-27T07:48:21.639Z macOS 原生任务旅程通过，待 Windows CI
+:PROPERTIES:
+:RESULT: partial
+:CRITERIA_SHA256: ae9811314bad6cb26b2f9962bb62db60cf6e717e87a6b9fe70a8dbd65c3c3203
+:RECORDED_AT: 2026-11-27T07:48:21.639Z
+:END:
+新增 `test/cli-e2e/org-task-reading.test.ts`，从项目子目录通过真实 CLI 验证 CRLF Org 源、list/show/next、路径和行号、进度与 apply、Markdown 回归以及无 Markdown 投影。`pnpm run lint`、`pnpm run build`、`node bin/openspec.js validate read-native-org-tasks --strict` 和 `git diff --check` 均通过。macOS 相关回归 26 个文件、505 项通过；当前提交尚未推送，无 Windows CI 结果。
+*** [PASS] 2026-11-27T09:42:57.377Z Windows 与 Unix CI 矩阵通过原生 Org 任务读取旅程与全量回归
+:PROPERTIES:
+:RESULT: pass
+:CRITERIA_SHA256: ae9811314bad6cb26b2f9962bb62db60cf6e717e87a6b9fe70a8dbd65c3c3203
+:RECORDED_AT: 2026-11-27T09:42:57.377Z
+:END:
+GitHub Actions CI #45974211407 (https://github.com/gongshangzheng/openspec-org/actions/runs/45974211407) 在分支 ci/read-native-org-tasks 提交 ff7ed2bc26b3a71e17b69a20308485732ae4df84 上全部通过：Test (windows-pwsh) (11m9s)、Test (macos-bash) (5m9s)、Test (linux-bash) (4m10s)、Test (linux-bash-node22) (3m5s)、Test (linux-bash-node24) (3m34s)、Nix Flake Validation (2m45s)、Lint & Type Check (31s) 及 Upgrade from releases (ubuntu-latest / windows-latest) 均为 success。覆盖 test/cli-e2e/org-task-reading.test.ts 的 CRLF、子目录定位、list/show/next、路径与行号、进度与 apply、Markdown 回归及无 tasks.md 投影。

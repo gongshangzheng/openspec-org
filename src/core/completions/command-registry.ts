@@ -274,6 +274,59 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
     ],
   },
   {
+    name: 'task',
+    description: 'Read native Org tasks',
+    flags: [],
+    subcommands: [
+      {
+        name: 'list',
+        description: 'List tasks in document order',
+        flags: [
+          {
+            name: 'change',
+            description: 'Change name',
+            takesValue: true,
+          },
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+        ],
+      },
+      {
+        name: 'show',
+        description: 'Show one task',
+        acceptsPositional: true,
+        positionals: [{ name: 'task-id' }],
+        flags: [
+          {
+            name: 'change',
+            description: 'Change name',
+            takesValue: true,
+          },
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+          {
+            name: 'sections',
+            description: 'Select description, criteria, evidence, custom, or all',
+            takesValue: true,
+          },
+        ],
+      },
+      {
+        name: 'next',
+        description: 'Find the next task',
+        flags: [
+          {
+            name: 'change',
+            description: 'Change name',
+            takesValue: true,
+          },
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+        ],
+      },
+    ],
+  },
+  {
     name: 'templates',
     description: 'Show resolved template paths for all artifacts in a schema',
     flags: [

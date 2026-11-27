@@ -1,8 +1,9 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import type { Artifact, SchemaYaml } from '../core/artifact-graph/index.js';
-import { resolveArtifactOutputs, resolveSchema } from '../core/artifact-graph/index.js';
+import { resolveArtifactOutputPath, resolveArtifactOutputs, resolveSchema } from '../core/artifact-graph/index.js';
 import { resolveSchemaForChange } from './change-metadata.js';
+import { nextOrgTask, readOrgTasks } from '../core/parsers/org-tasks.js';
 
 /**
  * A Markdown task line: a list item carrying a checkbox that holds at most one
@@ -300,6 +301,42 @@ export async function getTaskProgressForChange(
     projectRoot
   );
   return { total, completed };
+}
+
+export async function readOrgTaskProgress(changeDir: string, projectRoot: string, schemaName: string) {
+  const artifact = findTrackedTasksArtifact(resolveSchema(schemaName, projectRoot));
+  if (!artifact || artifact.generates !== 'tasks.org') {
+    throw new Error('The Org workflow must track tasks.org');
+  }
+  const sourcePath = resolveArtifactOutputPath(changeDir, artifact.generates);
+  let content: string;
+  try {
+    content = await fs.readFile(sourcePath, 'utf-8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    return { sourcePath, missing: true } as const;
+  }
+  const tasks = readOrgTasks(content, sourcePath);
+  return {
+    sourcePath, missing: false, tasks,
+    total: tasks.length, completed: tasks.filter((task) => task.state === 'DONE').length,
+    next: nextOrgTask(tasks),
+  } as const;
+}
+
+/** List may display native progress without enabling it for archive gates. */
+export async function getListedTaskProgress(changesDir: string, changeName: string, projectRoot: string): Promise<TaskProgress> {
+  const changeDir = path.join(changesDir, changeName);
+  let schemaName: string;
+  try {
+    schemaName = resolveSchemaForChange(changeDir, undefined, projectRoot);
+  } catch {
+    // Preserve the existing list behavior for unreadable Markdown metadata.
+    return getTaskProgressForChange(changesDir, changeName, projectRoot);
+  }
+  if (schemaName !== 'spec-driven-org') return getTaskProgressForChange(changesDir, changeName, projectRoot);
+  const result = await readOrgTaskProgress(changeDir, projectRoot, schemaName);
+  return result.missing ? { total: 0, completed: 0 } : { total: result.total, completed: result.completed };
 }
 
 export function formatTaskStatus(progress: TaskProgress): string {

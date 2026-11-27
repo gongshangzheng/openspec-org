@@ -1,7 +1,7 @@
 import type { Change, Requirement, Spec } from '../schemas/index.js';
 import type { DeltaPlan, RequirementBlock } from './requirement-blocks.js';
 
-interface Heading {
+export interface Heading {
   level: number;
   title: string;
   index: number;
@@ -13,7 +13,7 @@ const operations = ['added', 'modified', 'removed', 'renamed'] as const;
 const requirementName = (title: string) => /^Requirement:[ \t]*(\S.*)$/i.exec(title)?.[1];
 const scenarioName = (title: string) => /^Scenario:[ \t]*(\S.*)$/i.exec(title)?.[1];
 
-class OrgDocument {
+export class OrgDocument {
   readonly lines: string[];
   readonly visible: string[] = [];
   readonly roots: Heading[] = [];

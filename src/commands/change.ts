@@ -13,7 +13,7 @@ import {
   describeNestedChange,
   findNestedChangesIn,
 } from '../utils/nested-change.js';
-import { getTaskProgressForChange } from '../utils/task-progress.js';
+import { getListedTaskProgress } from '../utils/task-progress.js';
 import { FileSystemUtils } from '../utils/file-system.js';
 import { assertDiscoveredSpecFile } from '../utils/spec-path-containment.js';
 import { discoverSpecFiles } from '../utils/spec-discovery.js';
@@ -457,7 +457,7 @@ export class ChangeCommand {
           // this deprecated noun-form list cannot re-fork the resolution
           // (#1202). Tasks are independent of the proposal: a change can carry
           // tasks before, or without, a proposal.md.
-          const taskStatus = await getTaskProgressForChange(changesPath, changeName, process.cwd());
+          const taskStatus = await getListedTaskProgress(changesPath, changeName, process.cwd());
 
           // No proposal yet is an ordinary state (scaffolded change, or a
           // schema with no proposal artifact), so name the change rather than
@@ -505,7 +505,7 @@ export class ChangeCommand {
         const format = changeArtifactFormat(process.cwd(), changeDir);
         const proposalFilename = format === 'org' ? 'proposal.org' : 'proposal.md';
         const proposalPath = path.join(changeDir, proposalFilename);
-        const { total, completed } = await getTaskProgressForChange(changesPath, changeName, process.cwd());
+        const { total, completed } = await getListedTaskProgress(changesPath, changeName, process.cwd());
         const taskStatusText = total > 0 ? ` [tasks ${completed}/${total}]` : '';
         if (await isDefinitelyMissing(proposalPath)) {
           console.log(`${changeName}: (no ${proposalFilename} yet)${taskStatusText}`);

@@ -15,6 +15,7 @@ import * as fs from 'fs';
 import { getSchemaDir, listSchemas } from '../../core/artifact-graph/index.js';
 import type { ReferenceIndexEntry } from '../../core/references.js';
 import { isRootSelectionError } from '../../core/root-selection.js';
+import type { OrgTaskNext } from '../../core/parsers/org-tasks.js';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -48,6 +49,8 @@ export interface ApplyInstructions {
   };
   tasks: TaskItem[];
   taskTrackingConfigured: boolean;
+  orgTaskPath?: string;
+  next?: OrgTaskNext;
   unavailableTrackingFiles?: Array<{
     path: string;
     reason: string;

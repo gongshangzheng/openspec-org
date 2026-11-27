@@ -31,6 +31,28 @@ describe('ListCommand', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
+  it('lists each change using its selected task file, without a Markdown fallback for Org', async () => {
+    const changes = path.join(tempDir, 'openspec', 'changes');
+    for (const name of ['org-change', 'org-empty', 'markdown-change']) {
+      const dir = path.join(changes, name);
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(path.join(dir, '.openspec.yaml'), `schema: ${name.startsWith('org-') ? 'spec-driven-org' : 'spec-driven'}\n`);
+      await fs.writeFile(path.join(dir, 'tasks.md'), '- [x] Markdown task\n');
+    }
+    const orgText = '* DONE First\n:PROPERTIES:\n:TASK_ID: 1.1\n:END:\n* TODO Second\n:PROPERTIES:\n:TASK_ID: 1.2\n:END:\n';
+    for (const name of ['org-change', 'markdown-change']) {
+      await fs.writeFile(path.join(changes, name, 'tasks.org'), orgText);
+    }
+
+    const output = await runCLI(['list', '--json', '--sort', 'name'], { cwd: tempDir });
+    expect(output.exitCode, output.stdout + output.stderr).toBe(0);
+    expect(JSON.parse(output.stdout).changes).toMatchObject([
+      { name: 'markdown-change', totalTasks: 1, completedTasks: 1, status: 'complete' },
+      { name: 'org-change', totalTasks: 2, completedTasks: 1, status: 'in-progress' },
+      { name: 'org-empty', totalTasks: 0, completedTasks: 0, status: 'no-tasks' },
+    ]);
+  });
+
   describe('archive options', () => {
     async function writeChange(name: string, tasks = '- [x] Done\n- [ ] Pending\n'): Promise<string> {
       const changeDir = path.join(tempDir, 'openspec', 'changes', name);
