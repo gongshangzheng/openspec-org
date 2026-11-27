@@ -34,10 +34,18 @@ import { discoverSpecFiles } from '../utils/spec-discovery.js';
 import { FileSystemUtils } from '../utils/file-system.js';
 import { assertSpecFileWithin } from '../utils/spec-path-containment.js';
 import { matchLineEnding } from '../utils/line-endings.js';
+import {
+  changeArtifactFormat,
+  mainSpecFormat,
+  specFilenameFor,
+} from '../utils/change-utils.js';
+import { buildUpdatedOrgSpec } from './specs-apply-org.js';
 
 // -----------------------------------------------------------------------------
 // Types
 // -----------------------------------------------------------------------------
+
+export type SpecFormat = 'markdown' | 'org';
 
 export interface SpecUpdate {
   /** Capability id relative to the specs root, forward-slash separated (e.g. "web" or "platform/session-layout"). */
@@ -49,6 +57,8 @@ export interface SpecUpdate {
   targetRoot: string;
   target: string;
   exists: boolean;
+  /** Explicit spec format when resolved via format-aware discovery. */
+  format?: SpecFormat;
 }
 
 function isLexicallyWithin(allowedDirectory: string, targetPath: string): boolean {
@@ -105,11 +115,53 @@ function resolveTrustedSpecPath(
   }
 }
 
-function assertTrustedSpecPath(root: string, specPath: string): void {
+export function assertTrustedSpecPath(root: string, specPath: string): void {
   if (FileSystemUtils.canonicalizeExistingPath(root) !== path.resolve(root)) {
     throw new Error(`Path is outside the allowed directory: ${specPath}`);
   }
   assertSpecFileWithin(root, specPath);
+}
+
+/**
+ * Verify that the change workflow format matches the main-specs directory format.
+ * Rejects cross-format merges before any spec read or write occurs.
+ */
+export function assertCompatibleSpecFormat(projectRoot: string, changeDir: string): SpecFormat {
+  const changeFormat = changeArtifactFormat(projectRoot, changeDir);
+  const targetFormat = mainSpecFormat(projectRoot);
+  if (changeFormat !== targetFormat) {
+    throw new Error(
+      `Cross-format spec sync rejected: change '${path.basename(changeDir)}' uses ${changeFormat} (${specFilenameFor(changeFormat)}), ` +
+        `but main specs at ${path.join(projectRoot, 'openspec', 'specs')} use ${targetFormat} (${specFilenameFor(targetFormat)}).`
+    );
+  }
+  return changeFormat;
+}
+
+/**
+ * Refuse to read or write a capability target when the opposite format's spec
+ * file already exists in that capability directory.
+ */
+async function assertOppositeFormatAbsent(
+  targetFile: string,
+  capabilityId: string,
+  format: SpecFormat
+): Promise<void> {
+  const oppositeFormat: SpecFormat = format === 'org' ? 'markdown' : 'org';
+  const oppositeTarget = path.join(path.dirname(targetFile), specFilenameFor(oppositeFormat));
+  try {
+    await fs.lstat(oppositeTarget);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException)?.code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') {
+      return;
+    }
+    throw error;
+  }
+  throw new Error(
+    `Cross-format spec conflict for '${capabilityId}': expected ${specFilenameFor(format)}, ` +
+      `but found opposite-format target ${oppositeTarget}.`
+  );
 }
 
 // -----------------------------------------------------------------------------
@@ -119,17 +171,22 @@ function assertTrustedSpecPath(root: string, specPath: string): void {
 /**
  * Find all delta spec files that need to be applied from a change.
  */
-export async function findSpecUpdates(changeDir: string, mainSpecsDir: string): Promise<SpecUpdate[]> {
+export async function findSpecUpdates(
+  changeDir: string,
+  mainSpecsDir: string,
+  format: SpecFormat = 'markdown'
+): Promise<SpecUpdate[]> {
   const updates: SpecUpdate[] = [];
   const changeSpecsDir = path.join(changeDir, 'specs');
+  const specFilename = specFilenameFor(format);
 
   // Discover delta specs recursively so nested layouts like
   // specs/<area>/<capability>/spec.md merge into the same relative path
   // under the main specs directory (#1353)
-  const discovered = await discoverSpecFiles(changeSpecsDir);
+  const discovered = await discoverSpecFiles(changeSpecsDir, specFilename);
 
   for (const { id, specFile } of discovered) {
-    const targetFile = path.join(mainSpecsDir, ...id.split('/'), 'spec.md');
+    const targetFile = path.join(mainSpecsDir, ...id.split('/'), specFilename);
     const source = resolveTrustedSpecPath(changeSpecsDir, specFile);
     // Main specs always live at `<project root>/openspec/specs`, so the
     // project root is the grandparent - a linked capability directory may not
@@ -139,6 +196,8 @@ export async function findSpecUpdates(changeDir: string, mainSpecsDir: string): 
       targetFile,
       path.dirname(path.dirname(mainSpecsDir))
     );
+
+    await assertOppositeFormatAbsent(target.file, id, format);
 
     // Check if target exists
     let exists = false;
@@ -156,6 +215,7 @@ export async function findSpecUpdates(changeDir: string, mainSpecsDir: string): 
       targetRoot: target.root,
       target: target.file,
       exists,
+      format,
     });
   }
 
@@ -169,7 +229,7 @@ export async function findSpecUpdates(changeDir: string, mainSpecsDir: string): 
 export async function buildUpdatedSpec(
   update: SpecUpdate,
   changeName: string,
-  options: { silent?: boolean } = {}
+  options: { silent?: boolean; format?: SpecFormat } = {}
 ): Promise<{
   rebuilt: string;
   counts: { added: number; modified: number; removed: number; renamed: number };
@@ -209,6 +269,11 @@ export async function buildUpdatedSpec(
    * hand-written prose silently.
    */
 }> {
+  const format = options.format ?? update.format ?? 'markdown';
+  await assertOppositeFormatAbsent(update.target, update.id, format);
+  if (format === 'org') {
+    return buildUpdatedOrgSpec(update, changeName, options);
+  }
   // Collected so silent (JSON) callers can surface them; printed live for
   // human callers at the point they occur.
   const warnings: string[] = [];
@@ -1105,8 +1170,10 @@ export async function retireSpec(
     beforeMutate?: () => Promise<void>;
     verifyDisplaced?: (displacedPath: string) => Promise<void>;
     deferDelete?: boolean;
+    format?: SpecFormat;
   } = {}
 ): Promise<{ retired: boolean; resolvedPath?: string; displacedPath?: string }> {
+  const format = options.format ?? update.format ?? 'markdown';
   if (options.deferDelete && options.verifyDisplaced === undefined) {
     throw new Error('Deferred retirement requires displaced-file verification.');
   }
@@ -1193,7 +1260,7 @@ export async function retireSpec(
     await pruneEmptyDirs(path.dirname(update.target), mainSpecsDir);
   }
 
-  const nominal = options.displayPath ?? `openspec/specs/${update.id}/spec.md`;
+  const nominal = options.displayPath ?? `openspec/specs/${update.id}/${specFilenameFor(format)}`;
   if (!options.silent) {
     console.log(`Retiring ${nominal}: all requirements removed.`);
   }
@@ -1288,8 +1355,11 @@ export async function writeUpdatedSpec(
     silent?: boolean;
     displayPath?: string;
     beforeMutate?: () => Promise<void>;
+    format?: SpecFormat;
   } = {}
 ): Promise<void> {
+  const format = options.format ?? update.format ?? 'markdown';
+  await assertOppositeFormatAbsent(update.target, update.id, format);
   assertTrustedSpecPath(update.targetRoot, update.target);
   // Pin what the assertion just checked. A capability's spec.md may be a link
   // to the file the project keeps elsewhere, so the write follows a link by
@@ -1335,7 +1405,7 @@ export async function writeUpdatedSpec(
   if (options.silent) return;
 
   const specName = update.id;
-  console.log(`Applying changes to ${options.displayPath ?? `openspec/specs/${specName}/spec.md`}:`);
+  console.log(`Applying changes to ${options.displayPath ?? `openspec/specs/${specName}/${specFilenameFor(format)}`}:`);
   if (counts.added) console.log(`  + ${counts.added} added`);
   if (counts.modified) console.log(`  ~ ${counts.modified} modified`);
   if (counts.removed) console.log(`  - ${counts.removed} removed`);
