@@ -8,8 +8,27 @@ import {
   getTaskProgressForChange,
   getTaskProgressDetailForChange,
   parseTaskLines,
+  readOrgTaskProgress,
 } from '../../src/utils/task-progress.js';
 import { resolveArtifactOutputs } from '../../src/core/artifact-graph/index.js';
+
+it('reads the schema-tracked Org source and never substitutes a Markdown task file', async () => {
+  const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'openspec-org-task-progress-'));
+  try {
+    const changeDir = path.join(projectRoot, 'openspec', 'changes', 'org-change');
+    await fs.mkdir(changeDir, { recursive: true });
+    const sourcePath = path.join(changeDir, 'tasks.org');
+    await fs.writeFile(path.join(changeDir, 'tasks.md'), '- [x] Not the selected artifact\n');
+    const read = () => readOrgTaskProgress(changeDir, projectRoot, 'spec-driven-org');
+    expect(await read()).toMatchObject({ sourcePath: expect.stringContaining('tasks.org'), missing: true });
+    await fs.writeFile(sourcePath, '* TODO Org task\n:PROPERTIES:\n:TASK_ID: 3.2\n:END:\n');
+    expect(await read()).toMatchObject({
+      missing: false, total: 1, completed: 0, next: { state: 'ready', taskId: '3.2' },
+    });
+  } finally {
+    await fs.rm(projectRoot, { recursive: true, force: true });
+  }
+});
 
 /**
  * #1202 — task progress is resolved through the tracked-tasks artifact's

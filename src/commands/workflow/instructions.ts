@@ -51,7 +51,8 @@ import {
   type ApplyInstructions,
   type ArchiveInstructions,
 } from './shared.js';
-import { parseLocatedTaskLines, type ParsedTask } from '../../utils/task-progress.js';
+import { parseLocatedTaskLines, readOrgTaskProgress, type ParsedTask } from '../../utils/task-progress.js';
+import { describeOrgTaskNext } from '../task.js';
 import { METADATA_FILENAME } from '../../utils/change-metadata.js';
 
 // -----------------------------------------------------------------------------
@@ -488,8 +489,9 @@ async function collectApplyWarnings(input: {
   changeDir: string;
   changeName: string;
   skippedArtifacts?: Set<string>;
+  org: boolean;
 }): Promise<string[]> {
-  const { state, schema, changeDir, changeName, skippedArtifacts } = input;
+  const { state, schema, changeDir, changeName, skippedArtifacts, org } = input;
   if (state === 'blocked') return [];
 
   const specArtifacts = schema.artifacts.filter((artifact) =>
@@ -497,7 +499,7 @@ async function collectApplyWarnings(input: {
   );
   if (specArtifacts.length === 0) return [];
   if (specArtifacts.some((artifact) => skippedArtifacts?.has(artifact.id))) return [];
-  const warnings = (await findUnreadDeltaFiles(path.join(changeDir, 'specs'))).map(
+  const warnings = (org ? [] : await findUnreadDeltaFiles(path.join(changeDir, 'specs'))).map(
     (file) =>
       `specs/${file.path} is not a capability's spec.md, so \`openspec validate ${changeName}\` rejects it and archive never merges it. ` +
       `Move its requirements into specs/${file.expected}.`
@@ -596,10 +598,13 @@ export async function generateApplyInstructions(
   // Parse every concrete file matched by apply.tracks. A tracking path may be
   // a glob owned by an artifact with any ID, so treating it as one literal
   // path loses task evidence for valid custom schemas.
-  let parsedTasks: LocatedTask[] = [];
+  const org = context.schemaName === 'spec-driven-org';
+  const orgProgress = org ? await readOrgTaskProgress(changeDir, projectRoot, context.schemaName) : undefined;
+  const orgRead = orgProgress?.missing === false ? orgProgress : undefined;
+  const parsedTasks: LocatedTask[] = [];
   const unavailableTrackingFiles: Array<{ path: string; reason: string }> = [];
-  let tracksFileExists = false;
-  if (tracksFile) {
+  let tracksFileExists = orgRead !== undefined;
+  if (tracksFile && !org) {
     const tracksPaths = resolveArtifactOutputs(changeDir, tracksFile);
     tracksFileExists = tracksPaths.length > 0;
     for (const tracksPath of tracksPaths) {
@@ -616,12 +621,13 @@ export async function generateApplyInstructions(
       }
     }
   }
-  const tasks = toTaskItems(parsedTasks);
+  const tasks = orgRead ? orgRead.tasks.map((task) => ({
+    id: task.id, description: task.title, done: task.state === 'DONE', sourcePath: orgRead.sourcePath, line: task.line,
+  })) : toTaskItems(parsedTasks);
 
-  // Calculate progress over every checkbox in the file, listed or not, so these
-  // numbers match `openspec list` and archive's incomplete-task check.
-  const total = parsedTasks.length;
-  const complete = parsedTasks.filter((task) => task.done).length;
+  // Markdown still counts every checkbox, including ones omitted from tasks.
+  const total = orgRead?.total ?? parsedTasks.length;
+  const complete = orgRead?.completed ?? parsedTasks.filter((task) => task.done).length;
   const remaining = total - complete;
 
   // Determine state and instruction
@@ -654,6 +660,9 @@ export async function generateApplyInstructions(
   } else if (tracksFile && unavailableTrackingFiles.length > 0 && tasks.length === 0) {
     state = 'blocked';
     instruction = 'No readable task descriptions are available.';
+  } else if (orgRead?.next.state === 'blocked') {
+    state = 'blocked';
+    instruction = describeOrgTaskNext(orgRead.next);
   } else if (tracksFile && tracksFileExists && tasks.length === 0) {
     // Tracking file exists but lists nothing an agent can work on: either no
     // checkboxes at all, or only checkboxes with no text after them.
@@ -679,6 +688,10 @@ export async function generateApplyInstructions(
     instruction = schemaInstruction?.trim() ?? 'Read context files, work through pending tasks, mark complete as you go.\nPause if you hit blockers or need clarification.';
   }
 
+  if (state === 'ready' && orgRead?.next.state === 'ready') {
+    instruction = `${describeOrgTaskNext(orgRead.next)}\n${instruction}`;
+  }
+
   if (unavailableTrackingFiles.length > 0) {
     const unavailableDetails = unavailableTrackingFiles
       .map((file) => `- ${file.path}: ${file.reason}`)
@@ -694,6 +707,7 @@ export async function generateApplyInstructions(
       changeDir,
       changeName,
       skippedArtifacts: context.skippedArtifacts,
+      org,
     })),
   ];
 
@@ -705,6 +719,8 @@ export async function generateApplyInstructions(
     progress: { total, complete, remaining },
     tasks,
     taskTrackingConfigured: tracksFile !== null,
+    ...(orgProgress ? { orgTaskPath: orgProgress.sourcePath } : {}),
+    ...(orgRead && missingArtifacts.length === 0 ? { next: orgRead.next } : {}),
     ...(unavailableTrackingFiles.length > 0 ? { unavailableTrackingFiles } : {}),
     state,
     missingArtifacts: missingArtifacts.length > 0 ? missingArtifacts : undefined,
@@ -831,8 +847,8 @@ export function printApplyInstructionsText(instructions: ApplyInstructions): voi
   if (tasks.length > 0) {
     console.log('### Tasks');
     for (const task of tasks) {
-      const checkbox = task.done ? '[x]' : '[ ]';
-      console.log(`- ${checkbox} ${task.description}`);
+      if (instructions.orgTaskPath) console.log(`- ${task.id} ${task.done ? 'DONE' : 'TODO'} ${task.description}`);
+      else console.log(`- ${task.done ? '[x]' : '[ ]'} ${task.description}`);
     }
     console.log();
   }

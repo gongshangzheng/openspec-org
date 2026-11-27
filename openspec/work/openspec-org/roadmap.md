@@ -1,6 +1,6 @@
 # OpenSpec Markdown and Org Roadmap
 
-[Goal and release evidence](goal.md). This roadmap coordinates reviewable changes; it is not an executable task queue. Only the first change is scaffolded. Each later change gets its own approved planning artifacts when its scope and dependencies are ready.
+[Goal and release evidence](goal.md). This roadmap coordinates reviewable changes; it is not an executable task queue. Each change gets its own approved planning artifacts when its scope and dependencies are ready.
 
 ## 1. Opt-in Org artifact workflow
 
@@ -8,11 +8,20 @@
 
 ## 2. CLI task lifecycle
 
+首个切片是 [`read-native-org-tasks`](../../changes/read-native-org-tasks/proposal.md)：只交付 Org 任务读取、进度和 `next`，供后续写操作复用。
+
 After the artifact contract is set, migrate only the useful Org task model and operations from the old Tangwen workflow. Keep `tasks.org` in the change with native TODO/DONE headings and stable `:TASK_ID:` properties. A heading carries status and a short title; prose can live directly below it or under a description heading. Prefer generating a description heading by default, without requiring it, multiline prose, or checkbox-friendly wording. Confirm template/config details in this change; do not automatically move existing paragraphs.
 
 Expose CLI-owned change listing and task progress, task list/read/next, creation, editing, reordering, splitting, dependencies, evidence, status transitions, and archive readiness. Keep criteria in their task's acceptance section; evidence is append-only and completion is evaluated against the current criteria. Preserve completed tasks and historic evidence on edits. A structural change must present the actual preview and get real confirmation before writing. Centralize locking, immutable snapshot checks, validation, and safe writes in the CLI; previews and errors must not mutate task data. Keep Markdown checkbox behavior for Markdown changes. An Org change reads and writes its own `tasks.org` without a Markdown projection or fallback. Do not add a wrapper or separate task package.
 
-Review slices can separate read/progress from writes, and writes from evidence/readiness, after the shared task model is established. Verify a stale preview cannot write, criteria changes invalidate old acceptance for readiness, and reordering or splitting retains evidence and updates current references.
+### 重排与跨组移动
+
+- **同组重排**不要求任务连续；未选中的任务保持原有相对顺序。**跨组移动**必须明确目标组和插入位置，例如「把 `1.2` 移到验证组，放在 `3.1` 前」。不沿用旧扩展对连续同级任务的限制，也不修改旧扩展。
+- 重排和移动都以整棵任务子树为单位。跨层级时只调整结构所需的标题级别；保留 `:TASK_ID:`、TODO/DONE 状态、正文、验收标准、依赖引用和历史证据，不自动重编号或重写历史证据。
+- 新 CLI 默认按 `tasks.org` 的文档顺序推进。`:TASK_ID:` 只用于稳定引用，`org-num-mode` 只显示标题编号。显式依赖仍是硬约束：如果变更后的顺序把任务放在其前置任务之前，CLI 拒绝操作并指出冲突，不自动改依赖或顺序。现有 Markdown 工作流不变。
+- 结构预览展示任务原位置、目标组、插入位置及调整后的执行顺序。验收覆盖同组非连续重排、跨组移动后 `next` 的选择、任务内容及证据的保留，以及依赖冲突、取消或过期预览均不落盘。
+
+Review slices can separate read/progress from writes, and writes from evidence/readiness, after the shared task model is established. Verify a stale preview cannot write, criteria changes invalidate old acceptance for readiness, and operations that do change IDs (such as a split) retain historical evidence and update current references.
 
 ## 3. Single-project spec sync and archive
 

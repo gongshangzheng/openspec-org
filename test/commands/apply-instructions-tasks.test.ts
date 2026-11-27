@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { generateApplyInstructions } from '../../src/commands/workflow/instructions.js';
 import { getTaskProgressForChange } from '../../src/utils/task-progress.js';
+import { runCLI } from '../helpers/run-cli.js';
 
 /**
  * The apply task list and task progress read the same tasks file, so they must
@@ -29,6 +30,38 @@ describe('generateApplyInstructions task list', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('reports the same Org candidate as task next and keeps the missing artifact gate', async () => {
+    fs.writeFileSync(path.join(changeDir, '.openspec.yaml'), 'schema: spec-driven-org\n');
+    const sourcePath = path.join(changeDir, 'tasks.org');
+    const cli = (args: string[]) => runCLI(args, { cwd: tempDir });
+    const read = async (args: string[]) => {
+      const result = await cli([...args, '--change', 'my-change', '--json']);
+      expect(result.exitCode, result.stdout + result.stderr).toBe(0);
+      return JSON.parse(result.stdout);
+    };
+    const instructions = () => read(['instructions', 'apply']);
+    const missing = await instructions();
+    expect(missing).toMatchObject({ state: 'blocked', missingArtifacts: ['tasks'], orgTaskPath: fs.realpathSync(changeDir) + path.sep + 'tasks.org' });
+    const source = '* DONE Completed\n:PROPERTIES:\n:TASK_ID: 2.1\n:END:\n* TODO Candidate\n:PROPERTIES:\n:TASK_ID: 3.2\n:DEPENDS_ON: 1.1\n:END:\n* TODO Dependency\n:PROPERTIES:\n:TASK_ID: 1.1\n:END:\n';
+    fs.writeFileSync(sourcePath, source);
+    const next = await read(['task', 'next']);
+    const apply = await instructions();
+    expect(apply).toMatchObject({ state: 'blocked', next: next.next, orgTaskPath: fs.realpathSync(sourcePath),
+      progress: { total: 3, complete: 1, remaining: 2 },
+      tasks: [{ id: '2.1', done: true }, { id: '3.2', done: false }, { id: '1.1', done: false }] });
+    const text = await cli(['instructions', 'apply', '--change', 'my-change']);
+    expect(text.stdout).toContain('Task 3.2 is blocked (incomplete dependencies: 1.1).');
+    expect(fs.readFileSync(sourcePath, 'utf8')).toBe(source);
+    expect(fs.existsSync(path.join(changeDir, 'tasks.md'))).toBe(false);
+    writeTasks('- [x] Decoy\n');
+    fs.writeFileSync(sourcePath, source.replace('* TODO Dependency', '* DONE Dependency'));
+    const ready = await instructions();
+    expect(ready).toMatchObject({ state: 'ready', next: (await read(['task', 'next'])).next,
+      progress: { total: 3, complete: 2, remaining: 1 } });
+    expect(ready.instruction).toContain('Next task: 3.2.');
+    expect(fs.readFileSync(path.join(changeDir, 'tasks.md'), 'utf8')).toBe('- [x] Decoy\n');
   });
 
   function writeTasks(content: string): void {

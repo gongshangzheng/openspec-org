@@ -1,6 +1,6 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import { getTaskProgressForChange, formatTaskStatus } from '../utils/task-progress.js';
+import { getListedTaskProgress, formatTaskStatus } from '../utils/task-progress.js';
 import { readFileSync, type Dirent } from 'fs';
 import { MarkdownParser } from './parsers/markdown-parser.js';
 import { readOrgMainSpec } from './parsers/org-structure.js';
@@ -174,7 +174,7 @@ export class ListCommand {
       );
 
       for (const changeDir of changeDirs) {
-        const progress = await getTaskProgressForChange(changeDir.parent, changeDir.name, targetPath);
+        const progress = await getListedTaskProgress(changeDir.parent, changeDir.name, targetPath);
         const changePath = path.join(changeDir.parent, changeDir.name);
         const lastModified = await getLastModified(changePath, changeDir.archived);
         changes.push({
