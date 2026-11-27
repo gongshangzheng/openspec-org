@@ -50,6 +50,8 @@ const DELIBERATE_CLI_PHRASE_CLAIMS: Record<string, string> = {
   'openspec archive these changes': 'same, for several changes at once (bulk-archive)',
   'openspec new change':
     'the new-change workflow runs this exact CLI command as its first step, then continues with the artifacts',
+  'openspec sync':
+    'syncs delta specs from a change to main specs with agent-guided verification and validation before reporting success',
   'openspec update change':
     'distinct from `openspec update`, which the update-change description redirects to the CLI command',
 };

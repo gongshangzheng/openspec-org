@@ -205,6 +205,17 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
     ],
   },
   {
+    name: 'sync',
+    description: 'Sync delta specs from an active change to main specs',
+    acceptsPositional: true,
+    positionalType: 'change-id',
+    positionals: [{ name: 'change-name', type: 'change-id', optional: true }],
+    flags: [
+      COMMON_FLAGS.json,
+      COMMON_FLAGS.store,
+    ],
+  },
+  {
     name: 'archive',
     description: 'Archive a completed change and update main specs',
     acceptsPositional: true,

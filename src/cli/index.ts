@@ -612,6 +612,26 @@ changeCmd
   });
 
 program
+  .command('sync [change-name]')
+  .description('Sync delta specs from an active change to main specs')
+  .option('--json', 'Output as JSON')
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (changeName?: string, options?: { json?: boolean; store?: string; storePath?: string }) => {
+    try {
+      const { syncCommand } = await import('../commands/sync.js');
+      await syncCommand(changeName, options);
+    } catch (error) {
+      await failWithError(error, {
+        enabled: options?.json,
+        payload: { change: changeName ?? null, synced: false, specs: [], root: null },
+        fallbackCode: 'sync_error',
+      });
+      process.exitCode = 1;
+    }
+  });
+
+program
   .command('archive [change-name]')
   .description('Archive a completed change and update main specs')
   .option('-y, --yes', 'Skip confirmation prompts')
