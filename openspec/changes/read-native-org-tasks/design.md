@@ -36,7 +36,7 @@
 
 1. `src/core/parsers/{org-tasks,org-structure}.ts` 与 `test/core/parsers/org-tasks.test.ts`：核对分组、两种正文形式、验收标准、证据原文和自定义小节，以及 ID/依赖和源行号；验证重复 ID、文档顺序、阻塞、空列表和全部完成。
 2. `src/utils/task-progress.ts`、`src/core/list.ts`、`src/commands/change.ts` 和 `test/utils/task-progress.test.ts`：验证同一项目中 Markdown 与 Org change 都按选定文件计算，缺失 Org 文件时不采用 Markdown 清单，现有 Markdown 输出不变。
-3. `src/cli/index.ts`、`src/commands/task.ts`、`src/commands/workflow/instructions.ts`，以及 `test/commands/org-task-reading.test.ts` 和 `test/commands/apply-instructions-tasks.test.ts`：用实际 CLI 核对列表、单项、下一项与 apply 的文本和 JSON；覆盖默认详情、选定小节、`all`、非法选项与固定元数据，并断言无写入。
+3. `src/cli/index.ts`、`src/commands/task.ts`、`src/commands/workflow/instructions.ts`、`src/core/completions/command-registry.ts`、`src/core/templates/workflows/store-selection.ts`、`skills/`，以及 `test/commands/org-task-reading.test.ts`、`test/commands/apply-instructions-tasks.test.ts`、`test/core/completions/command-registry.test.ts` 和 `test/core/templates/skill-templates-parity.test.ts`：用实际 CLI 核对列表、单项、下一项与 apply 的文本和 JSON；覆盖默认详情、选定小节、`all`、非法选项与固定元数据，并断言无写入，同时验证补全注册表、`--store` 清单与派生技能模板及校验哈希与 CLI 一致。
 4. `test/cli-e2e/org-task-reading.test.ts` 和现有 `.github/workflows/ci.yml`：用 Windows 与 Unix 的同一套旅程验证 CRLF、子目录定位和 Markdown 回归，记录两端 CI 证据。
 
 ## Risks / Trade-offs

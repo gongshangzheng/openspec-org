@@ -46,6 +46,20 @@
 :RECORDED_AT: 2026-11-27T07:45:24.771Z
 :END:
 `pnpm run build` 通过。`pnpm exec vitest run test/commands/org-task-reading.test.ts test/commands/apply-instructions-tasks.test.ts test/commands/apply-instructions-blocked.test.ts test/commands/apply-instructions-warnings.test.ts test/core/cli-is-json-run.test.ts test/cli-e2e/startup-modules.test.ts`：6 文件、82 项通过。覆盖文本和 JSON 筛选、固定字段、CRLF 证据原文、custom 标题和正文、非法选择、缺失 Org 文件、Markdown change 拒绝提示、list 摘要、apply/next 一致、无文件变更或投影，以及 Markdown apply 和 CLI 启动回归。`git diff --check` 通过。
+*** [FAIL] 2026-11-27T08:32:32.796Z 远端 CI 暴露补全注册表、--store 清单与 Windows 短路径回归
+:PROPERTIES:
+:RESULT: fail
+:CRITERIA_SHA256: ec7e37ee85eed90ddfc598d91cdcdcd6176f4a9af8c1486069617512ed3487e7
+:RECORDED_AT: 2026-11-27T08:32:32.796Z
+:END:
+GitHub Actions CI #45962063198 (https://github.com/gongshangzheng/openspec-org/actions/runs/45962063198, commit 5b225f58) 失败：5 个测试矩阵任务均在 test/core/completions/command-registry.test.ts 失败（task 未登记在 COMMAND_REGISTRY，且 task list/next/show 未列入 --store 清单和 STORE_SELECTION_GUIDANCE）；Test (windows-pwsh) 另在 test/commands/apply-instructions-tasks.test.ts:46 失败（fs.realpathSync 返回 8.3 短路径 RUNNER~1，与 CLI 返回的 runneradmin 不一致）。
+*** [PASS] 2026-11-27T09:09:30.861Z 补齐 task 补全注册表、--store 模板同步与 Windows native realpath 修复
+:PROPERTIES:
+:RESULT: pass
+:CRITERIA_SHA256: ec7e37ee85eed90ddfc598d91cdcdcd6176f4a9af8c1486069617512ed3487e7
+:RECORDED_AT: 2026-11-27T09:09:30.861Z
+:END:
+`node build.js`、`./node_modules/.bin/eslint src/`、`node scripts/generate-skillssh.mjs`（更新 12 个技能 SKILL.md）、`node scripts/regen-parity-hashes.mjs`（更新 36 项哈希）、四种壳层补全脚本生成（`bash`、`zsh`、`fish`、`powershell`）、`node bin/openspec.js validate read-native-org-tasks --strict` 与 `git diff --check` 均通过。定向回归 `./node_modules/.bin/vitest run test/core/completions test/core/templates test/commands/org-task-reading.test.ts test/commands/apply-instructions-tasks.test.ts test/cli-e2e/org-task-reading.test.ts test/core/global-skills.test.ts` 39 个文件 763 项全部通过；完整回归 `./node_modules/.bin/vitest run` 256 个文件 6536 项通过（1 个发布升级测试文件 19 项按环境条件跳过）。
 * TODO 在 Windows 和 Unix 验证原生任务读取旅程
 :PROPERTIES:
 :TASK_ID: 1.4
