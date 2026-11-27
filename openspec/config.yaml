@@ -5,6 +5,11 @@ context: |
   Package manager: pnpm
   CLI framework: Commander.js
 
+  Artifact language:
+  - Write new OpenSpec proposals, designs, specifications, and task titles, descriptions, and acceptance criteria in Simplified Chinese (zh-CN) by default, unless the user requests another language.
+  - Keep the selected schema's required structural headings and parser keywords unchanged (for example, Why, Requirement, Scenario, SHALL, WHEN, and THEN). Preserve existing requirement and scenario names when a delta must match them.
+  - Keep code, paths, command names, identifiers, and quoted evidence verbatim.
+
   Product language:
   - Write OpenSpec proposals and specs in user-facing product behavior language
   - Requirements should describe the experience, observable behavior, and product contract

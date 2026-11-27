@@ -1,0 +1,17 @@
+#+TITLE: Proposal
+
+* Why
+# Explain why this change is needed.
+
+* What Changes
+# Describe the user-visible changes and call out breaking changes.
+
+* Capabilities
+** New Capabilities
+# List new capabilities by their full path.
+
+** Modified Capabilities
+# List existing capabilities by their full path.
+
+* Impact
+# Identify affected code, systems, or interfaces.

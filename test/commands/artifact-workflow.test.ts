@@ -731,6 +731,53 @@ rules:
     });
   });
 
+  it('keeps Markdown by default and resolves the opt-in Org workflow', async () => {
+    const runJson = async (args: string[]) => {
+      const result = await runCLI([...args, '--json'], { cwd: tempDir });
+      expect(result.exitCode, getOutput(result)).toBe(0);
+      return JSON.parse(result.stdout);
+    };
+    const status = (name: string) => runJson(['status', '--change', name]);
+    const markdown = await runJson(['new', 'change', 'markdown-change']);
+    expect(markdown.change.schema).toBe('spec-driven');
+    const before = await status('markdown-change');
+    expect(before.artifactPaths.tasks.outputPath).toBe('tasks.md');
+
+    await fs.writeFile(path.join(tempDir, 'openspec', 'config.yaml'), 'schema: spec-driven-org\n');
+    const org = await runJson(['new', 'change', 'org-change']);
+    expect(org.change.schema).toBe('spec-driven-org');
+    const changeDir = org.change.path;
+    await fs.writeFile(path.join(changeDir, 'proposal.org'), '* Why\nUse the native Org workflow.\n');
+    await fs.writeFile(path.join(changeDir, 'design.md'), '## Context\nWrong format.\n');
+    const specDir = path.join(changeDir, 'specs', 'platform', 'session');
+    await fs.mkdir(specDir, { recursive: true });
+    await fs.writeFile(path.join(specDir, 'spec.org'), '* ADDED Requirements\n');
+
+    const selected = await status('org-change');
+    expect(selected.artifacts.map(({ id, requires }: { id: string; requires: string[] }) => ({ id, requires })))
+      .toEqual(before.artifacts.map(({ id, requires }: { id: string; requires: string[] }) => ({ id, requires })));
+    expect(selected.applyRequires).toEqual(before.applyRequires);
+    expect(Object.fromEntries(selected.artifacts.map(({ id, status }: { id: string; status: string }) => [id, status])))
+      .toEqual({ proposal: 'done', specs: 'done', design: 'ready', tasks: 'blocked' });
+    expect(selected.artifactPaths.specs.existingOutputPaths).toEqual([path.join(specDir, 'spec.org')]);
+    const templates = await runJson(['templates', '--schema', 'spec-driven-org']);
+    for (const [id, output, sample] of [
+      ['proposal', 'proposal.org', '* Why'],
+      ['specs', 'specs/**/spec.org', '* ADDED Requirements'],
+      ['design', 'design.org', '* Context'],
+      ['tasks', 'tasks.org', ':TASK_ID:'],
+    ]) {
+      const instructions = await runJson(['instructions', id, '--change', 'org-change']);
+      expect(instructions.outputPath).toBe(output);
+      expect(instructions.template).toContain(sample);
+      expect(templates[id].source).toBe('package');
+      expect(path.basename(templates[id].path)).toBe(id === 'specs' ? 'spec.org' : output);
+    }
+    const existing = await status('markdown-change');
+    expect(existing.schemaName).toBe('spec-driven');
+    expect(existing.artifactPaths).toEqual(before.artifactPaths);
+  });
+
   describe('new change command', () => {
     it('creates a new change directory', async () => {
       const result = await runCLI(['new', 'change', 'my-new-feature'], { cwd: tempDir });

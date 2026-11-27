@@ -1,0 +1,19 @@
+#+TITLE: Design
+
+* Context
+# Link to the proposal and summarize the constraints for this design.
+
+* Goals / Non-Goals
+# State the implementation boundaries.
+
+* Decisions
+# Explain the key choices and why they were made.
+
+* Risks / Trade-offs
+# Describe known limitations and mitigations.
+
+* Migration Plan
+# Include rollout and rollback steps if applicable.
+
+* Open Questions
+# List only decisions that can safely be deferred.

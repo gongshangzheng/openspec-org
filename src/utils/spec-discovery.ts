@@ -26,7 +26,10 @@ export interface DiscoveredSpec {
  * archive/apply merge path, silently dropping an unreadable capability would
  * recreate the exact data-loss class #1353 is closing.
  */
-export async function discoverSpecFiles(specsRoot: string): Promise<DiscoveredSpec[]> {
+export async function discoverSpecFiles(
+  specsRoot: string,
+  specFilename: 'spec.md' | 'spec.org' = 'spec.md',
+): Promise<DiscoveredSpec[]> {
   const results: DiscoveredSpec[] = [];
   const walk = async (dir: string, segments: string[]): Promise<void> => {
     let entries;
@@ -40,7 +43,7 @@ export async function discoverSpecFiles(specsRoot: string): Promise<DiscoveredSp
       if (entry.name.startsWith('.')) continue;
       if (entry.isDirectory()) {
         await walk(path.join(dir, entry.name), [...segments, entry.name]);
-      } else if (entry.name === 'spec.md' && segments.length > 0) {
+      } else if (entry.name === specFilename && segments.length > 0) {
         const specFile = path.join(dir, entry.name);
         if (entry.isFile()) {
           assertDiscoveredSpecFile(specsRoot, specFile);

@@ -1,0 +1,49 @@
+name: spec-driven-org
+version: 1
+description: Opt-in OpenSpec workflow with native Org artifacts
+artifacts:
+  - id: proposal
+    generates: proposal.org
+    description: Initial proposal explaining why the change is needed
+    template: proposal.org
+    instruction: |
+      Explain why the change is needed, what changes, which capabilities it affects, and its impact.
+      Use Org headings and the supplied template. Keep the proposal focused on intent and scope; technical decisions belong in design.org.
+      Use `openspec list --specs` to check the current capability inventory, then read the relevant specifications before deciding whether to add or modify a capability.
+      List the full capability path for each affected capability. Each entry needs a `specs/<capability-path>/spec.org` delta. Declare `skip_specs: true` only when the change does not affect observable behavior.
+    requires: []
+
+  - id: specs
+    generates: "specs/**/spec.org"
+    description: Detailed specifications for the change
+    template: spec.org
+    instruction: |
+      Create one `specs/<capability-path>/spec.org` for each capability listed in the proposal. Preserve the full capability path, including intermediate directories.
+      Describe observable behavior, not implementation steps. Use level-one headings `* ADDED Requirements`, `* MODIFIED Requirements`, `* REMOVED Requirements`, and `* RENAMED Requirements` for the applicable operations.
+      Under ADDED and MODIFIED, use `** Requirement: <name>` with normative prose and at least one `*** Scenario: <name>` child. Give each scenario a trigger (`- *WHEN*` or `- *GIVEN*`) and outcome (`- *THEN*`); use `- *AND*` for additional steps.
+      Under MODIFIED, use the existing requirement name and include the whole updated block with all its scenarios. Read the original under `openspec/specs/` in the resolved planning home, not the caller's working directory.
+      For removals, include the reason and any migration path. For renames, include the old and new headings with `FROM:` and `TO:` entries.
+      Include `* Purpose` only when introducing a new capability.
+    requires: [proposal]
+
+  - id: design
+    generates: design.org
+    description: Technical design and implementation trade-offs
+    template: design.org
+    instruction: |
+      Use the Org template to explain how the change works and why key choices were made. Reference the proposal for scope and the specs for behavior. Include risks, migration, and open questions only where they affect the change.
+    requires: [proposal]
+
+  - id: tasks
+    generates: tasks.org
+    description: Implementation tasks with verifiable outcomes
+    template: tasks.org
+    instruction: |
+      Use the Org template to break implementation into verifiable tasks ordered by dependency. Give each task a TODO heading with a short title, a unique TASK_ID property, and a child acceptance criteria heading. Describe the work in the body or an optional description heading. Do not use Markdown checkboxes.
+    requires: [specs, design]
+
+apply:
+  requires: [tasks]
+  tracks: tasks.org
+  instruction: |
+    Read the context files and work through pending Org tasks in order. Verify each task against its criteria before marking it DONE. Pause if a task is blocked or needs clarification.

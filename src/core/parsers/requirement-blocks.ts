@@ -1,6 +1,7 @@
 import { buildCodeFenceMask, SCENARIO_HEADER } from './requirement-text.js';
 
 export interface RequirementBlock {
+  line?: number; // Original source line when provided by the artifact reader.
   headerLine: string; // e.g., '### Requirement: Something'
   name: string; // e.g., 'Something'
   raw: string; // full block including headerLine and following content

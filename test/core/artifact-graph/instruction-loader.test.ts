@@ -46,17 +46,20 @@ describe('instruction-loader', () => {
       expect(template).toContain('exact existing path under openspec/specs/');
     });
 
-    // Artifacts inherit the template's opening line, so every packaged template
-    // starts the document with an `# ` title instead of a section header.
-    // Without it every generated proposal.md, design.md, spec.md and tasks.md
-    // trips markdownlint MD041 (#1138).
+    // Artifacts inherit the template's opening line. Keep the Markdown title
+    // guard for MD041 (#1138) and use Org's document title for Org templates.
     it.each(packagedArtifacts())(
       'opens the %s schema\'s %s template with a title',
-      (schemaName, _artifactId, templateName) => {
+      (schemaName, artifactId, templateName) => {
         const [firstLine, secondLine] = openingLines(loadTemplate(schemaName, templateName));
 
-        expect(firstLine).toMatch(/^# \S/);
-        expect(secondLine).toBe('');
+        if (templateName.endsWith('.org')) {
+          expect(firstLine).toMatch(/^#\+TITLE: \S/);
+          expect(secondLine).toBe(artifactId === 'tasks' ? '#+STARTUP: num' : '');
+        } else {
+          expect(firstLine).toMatch(/^# \S/);
+          expect(secondLine).toBe('');
+        }
       }
     );
 

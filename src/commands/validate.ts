@@ -17,6 +17,8 @@ import {
 } from '../core/root-selection.js';
 import { canRenderSpinner, isInteractive, resolveNoInteractive } from '../utils/interactive.js';
 import { getSpecIds } from '../utils/item-discovery.js';
+import { changeArtifactFormat, mainSpecFormat, specFilenameFor } from '../utils/change-utils.js';
+import { assertDiscoveredSpecFile } from '../utils/spec-path-containment.js';
 import { getAvailableChanges } from './workflow/shared.js';
 import { nearestMatches } from '../utils/match.js';
 import { promises as fs } from 'fs';
@@ -24,8 +26,11 @@ import { getTaskProgressDetailForChange, type SchemaGlobCache } from '../utils/t
 import { FileSystemUtils } from '../utils/file-system.js';
 import { folderStyleNameProblem } from '../core/id.js';
 import { readConfigParseError } from '../core/project-config.js';
+import { ChangeMetadataError, readSkipSpecsMarker } from '../utils/change-metadata.js';
 
 type ItemType = 'change' | 'spec';
+
+const getConfiguredSpecIds = (root: string) => getSpecIds(root, specFilenameFor(mainSpecFormat(root)));
 
 interface ExecuteOptions {
   all?: boolean;
@@ -216,7 +221,7 @@ export class ValidateCommand {
     if (choice === 'specs') return this.runBulkValidation(root, { changes: false, specs: true }, opts);
 
     // one
-    const [changes, specs] = await Promise.all([this.listChangeIds(root), getSpecIds(root.path)]);
+    const [changes, specs] = await Promise.all([this.listChangeIds(root), getConfiguredSpecIds(root.path)]);
     const items: { name: string; value: { type: ItemType; id: string } }[] = [];
     items.push(...changes.map(id => ({ name: `change/${id}`, value: { type: 'change' as const, id } })));
     items.push(...specs.map(id => ({ name: `spec/${id}`, value: { type: 'spec' as const, id } })));
@@ -239,7 +244,7 @@ export class ValidateCommand {
   }
 
   private async validateDirectItem(root: ResolvedOpenSpecRoot, itemName: string, opts: { typeOverride?: ItemType; strict: boolean; json: boolean }): Promise<void> {
-    const [changes, specs] = await Promise.all([this.listChangeIds(root), getSpecIds(root.path)]);
+    const [changes, specs] = await Promise.all([this.listChangeIds(root), getConfiguredSpecIds(root.path)]);
     const isChange = changes.includes(itemName);
     const isSpec = specs.includes(itemName);
 
@@ -357,22 +362,40 @@ export class ValidateCommand {
         process.exitCode = 1;
         return;
       }
-      const report = await validator.validateChangeDeltaSpecs(changeDir, {
-        mainSpecsDir: root.specsDir,
-        projectRoot: root.path,
-      });
+      const report = await this.validateChangeDir(validator, root, changeDir);
       const durationMs = Date.now() - start;
       this.printReport('change', id, report, durationMs, opts.json, root);
       // Non-zero exit if invalid (keeps enriched output test semantics)
       process.exitCode = report.valid ? 0 : 1;
       return;
     }
-    const file = path.join(root.specsDir, id, 'spec.md');
     const start = Date.now();
-    const report = await validator.validateSpec(file);
+    const report = await this.validateMainSpec(validator, root, id, mainSpecFormat(root.path));
     const durationMs = Date.now() - start;
     this.printReport('spec', id, report, durationMs, opts.json, root);
     process.exitCode = report.valid ? 0 : 1;
+  }
+
+  private validateChangeDir(validator: Validator, root: ResolvedOpenSpecRoot, changeDir: string) {
+    let format: 'markdown' | 'org';
+    try {
+      format = changeArtifactFormat(root.path, changeDir);
+    } catch (error) {
+      if (!(error instanceof ChangeMetadataError) || !readSkipSpecsMarker(changeDir).invalidReason) throw error;
+      // Keep the existing marker diagnostic; rejected metadata does not select a schema.
+      format = mainSpecFormat(root.path);
+    }
+    return validator.validateChangeDeltaSpecs(changeDir, {
+      mainSpecsDir: format === mainSpecFormat(root.path) ? root.specsDir : undefined,
+      projectRoot: root.path,
+      format,
+    });
+  }
+
+  private validateMainSpec(validator: Validator, root: ResolvedOpenSpecRoot, id: string, format: 'markdown' | 'org') {
+    const file = path.join(root.specsDir, id, specFilenameFor(format));
+    if (format === 'org') assertDiscoveredSpecFile(root.specsDir, file);
+    return validator.validateSpec(file, format);
   }
 
   private printReport(type: ItemType, id: string, report: { valid: boolean; issues: any[] }, durationMs: number, json: boolean, root: ResolvedOpenSpecRoot): void {
@@ -471,7 +494,7 @@ export class ValidateCommand {
     }
     const [changeIds, specIds] = await Promise.all([
       scope.changes ? this.listChangeIds(root) : Promise.resolve<string[]>([]),
-      scope.specs ? getSpecIds(root.path) : Promise.resolve<string[]>([]),
+      scope.specs ? getConfiguredSpecIds(root.path) : Promise.resolve<string[]>([]),
     ]);
 
     const DEFAULT_CONCURRENCY = 6;
@@ -494,19 +517,16 @@ export class ValidateCommand {
             durationMs: Date.now() - start,
           };
         }
-        const report = await validator.validateChangeDeltaSpecs(changeDir, {
-          mainSpecsDir: root.specsDir,
-          projectRoot: root.path,
-        });
+        const report = await this.validateChangeDir(validator, root, changeDir);
         const durationMs = Date.now() - start;
         return { id, type: 'change' as const, valid: report.valid, issues: report.issues, durationMs };
       });
     }
+    const specFormat = specIds.length ? mainSpecFormat(root.path) : 'markdown';
     for (const id of specIds) {
       queue.push(async () => {
         const start = Date.now();
-        const file = path.join(root.specsDir, id, 'spec.md');
-        const report = await validator.validateSpec(file);
+        const report = await this.validateMainSpec(validator, root, id, specFormat);
         const durationMs = Date.now() - start;
         return { id, type: 'spec' as const, valid: report.valid, issues: report.issues, durationMs };
       });
