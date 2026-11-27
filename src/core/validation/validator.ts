@@ -4,6 +4,7 @@ import path from 'path';
 import { SpecSchema, ChangeSchema, Spec, Change } from '../schemas/index.js';
 import { MarkdownParser } from '../parsers/markdown-parser.js';
 import { ChangeParser } from '../parsers/change-parser.js';
+import { readOrgDelta, readOrgMainSpec, readOrgRequirement } from '../parsers/org-structure.js';
 import { ValidationReport, ValidationIssue, ValidationLevel } from './types.js';
 import { findSpecUpdates, buildUpdatedSpec } from '../specs-apply.js';
 import {
@@ -56,11 +57,12 @@ export class Validator {
     this.strictMode = strictMode;
   }
 
-  async validateSpec(filePath: string): Promise<ValidationReport> {
+  async validateSpec(filePath: string, format: 'markdown' | 'org' = 'markdown'): Promise<ValidationReport> {
     const issues: ValidationIssue[] = [];
     const specName = this.extractNameFromPath(filePath);
     try {
       const content = readFileSync(filePath, 'utf-8');
+      if (format === 'org') return this.validateOrgSpec(specName, content, filePath);
       const parser = new MarkdownParser(content);
       
       const spec = parser.parseSpec(specName);
@@ -78,7 +80,7 @@ export class Validator {
       const enriched = this.enrichTopLevelError(specName, baseMessage);
       issues.push({
         level: 'ERROR',
-        path: 'file',
+        path: format === 'org' ? filePath : 'file',
         message: enriched,
       });
     }
@@ -107,13 +109,13 @@ export class Validator {
     return this.createReport(issues);
   }
 
-  async validateChange(filePath: string): Promise<ValidationReport> {
+  async validateChange(filePath: string, format: 'markdown' | 'org' = 'markdown'): Promise<ValidationReport> {
     const issues: ValidationIssue[] = [];
     const changeName = this.extractNameFromPath(filePath);
     try {
       const content = readFileSync(filePath, 'utf-8');
       const changeDir = path.dirname(filePath);
-      const parser = new ChangeParser(content, changeDir);
+      const parser = new ChangeParser(content, changeDir, format);
 
       const change = await parser.parseChangeWithDeltas(changeName);
 
@@ -135,7 +137,7 @@ export class Validator {
             issue => !issue.message.startsWith(VALIDATION_MESSAGES.CHANGE_NO_DELTAS)
           );
         }
-        issues.push(...zodIssues);
+        issues.push(...(format === 'org' ? zodIssues.map((issue) => ({ ...issue, path: filePath })) : zodIssues));
       }
       
       issues.push(...this.applyChangeRules(change, content));
@@ -145,7 +147,7 @@ export class Validator {
       const enriched = this.enrichTopLevelError(changeName, baseMessage);
       issues.push({
         level: 'ERROR',
-        path: 'file',
+        path: format === 'org' ? filePath : 'file',
         message: enriched,
       });
     }
@@ -174,9 +176,14 @@ export class Validator {
    */
   async validateChangeDeltaSpecs(
     changeDir: string,
-    options: { mainSpecsDir?: string; projectRoot?: string } = {}
+    options: { mainSpecsDir?: string; projectRoot?: string; format?: 'markdown' | 'org' } = {}
   ): Promise<ValidationReport> {
     const issues: ValidationIssue[] = [];
+    const org = options.format === 'org';
+    const specFilename = org ? 'spec.org' : 'spec.md';
+    const sectionMarker = org ? '*' : '##';
+    const requirementMarker = org ? '**' : '###';
+    const normalizeName = org ? (name: string) => name.trim() : normalizeRequirementName;
     const specsDir = path.join(changeDir, 'specs');
     let totalDeltas = 0;
     let hasRootLevelSpec = false;
@@ -189,21 +196,21 @@ export class Validator {
       // path silently skips (#1385). It finds spec.md at any depth, covering
       // both specs/<capability>/spec.md and the nested multi-area
       // specs/<area>/<capability>/spec.md layout (#1182b).
-      const discoveredSpecs = await discoverSpecFiles(specsDir);
+      const discoveredSpecs = await discoverSpecFiles(specsDir, specFilename);
 
       // A spec.md directly at the specs/ root has no capability folder, so the
       // merge path drops it: without this error the change validates clean and
       // archives while its requirements never reach openspec/specs/ (#1385).
       // Only a regular file counts — a *directory* named spec.md is a capability
       // folder like any other, and discoverSpecFiles reads it normally.
-      const rootSpecStat = await fs.stat(path.join(specsDir, 'spec.md')).catch(() => null);
+      const rootSpecStat = await fs.stat(path.join(specsDir, specFilename)).catch(() => null);
       hasRootLevelSpec = rootSpecStat?.isFile() === true;
       if (hasRootLevelSpec) {
         issues.push({
           level: 'ERROR',
-          path: 'spec.md',
+          path: specFilename,
           message:
-            'Delta spec found at specs/spec.md. Delta specs must live under a capability path (e.g. specs/<capability-path>/spec.md) — a file at the specs/ root is ignored when the change is applied or archived.',
+            `Delta spec found at specs/${specFilename}. Delta specs must live under a capability path (e.g. specs/<capability-path>/${specFilename}) — a file at the specs/ root is ignored when the change is applied or archived.`,
         });
       }
 
@@ -211,12 +218,13 @@ export class Validator {
         let content: string | undefined;
         try {
           content = await fs.readFile(specFile, 'utf-8');
-        } catch {
+        } catch (error) {
+          if (org) throw error;
           continue;
         }
 
-        const plan = parseDeltaSpec(content);
-        const entryPath = FileSystemUtils.toPosixPath(path.relative(specsDir, specFile));
+        const plan = org ? readOrgDelta(content) : parseDeltaSpec(content);
+        const entryPath = org ? path.relative(specsDir, specFile) : FileSystemUtils.toPosixPath(path.relative(specsDir, specFile));
 
         // Surface (as INFO, never a failure) the non-canonical level-3 headers
         // the delta reader skipped while parsing ADDED/MODIFIED sections —
@@ -231,8 +239,8 @@ export class Validator {
             path: entryPath,
             line: stray.line,
             message: nameless
-              ? `Header "### ${stray.header}" in ${stray.section} is missing a requirement name and is ignored by validation. Add a name, e.g. "### Requirement: <name>".`
-              : `Header "### ${stray.header}" in ${stray.section} is not a "### Requirement:" header and is ignored by validation. Use "### Requirement: ${stray.header}" if it should be validated as a requirement.`,
+              ? `Header "${requirementMarker} ${stray.header}" in ${stray.section} is missing a requirement name and is ignored by validation. Add a name, e.g. "${requirementMarker} Requirement: <name>".`
+              : `Header "${requirementMarker} ${stray.header}" in ${stray.section} is not a "${requirementMarker} Requirement:" header and is ignored by validation. Use "${requirementMarker} Requirement: ${stray.header}" if it should be validated as a requirement.`,
           });
         }
 
@@ -259,13 +267,13 @@ export class Validator {
         // to be applied and archive refuses it too (#2195).
         for (const orphan of plan.orphanedRequirements) {
           const where = orphan.section
-            ? `under "## ${orphan.section}"`
-            : 'above the first "## " section';
+            ? `under "${sectionMarker} ${orphan.section}"`
+            : `above the first "${sectionMarker} " section`;
           issues.push({
             level: isUnrecognizedDeltaSection(orphan.section) ? 'ERROR' : 'WARNING',
             path: entryPath,
             line: orphan.line,
-            message: `Requirement "${orphan.name}" is ${where}, which is not a delta section, so it is ignored. Move it under "## ADDED Requirements", "## MODIFIED Requirements", "## REMOVED Requirements", or "## RENAMED Requirements".`,
+            message: `Requirement "${orphan.name}" is ${where}, which is not a delta section, so it is ignored. Move it under "${sectionMarker} ADDED Requirements", "${sectionMarker} MODIFIED Requirements", "${sectionMarker} REMOVED Requirements", or "${sectionMarker} RENAMED Requirements".`,
           });
         }
 
@@ -281,10 +289,10 @@ export class Validator {
         }
 
         const sectionNames: string[] = [];
-        if (plan.sectionPresence.added) sectionNames.push('## ADDED Requirements');
-        if (plan.sectionPresence.modified) sectionNames.push('## MODIFIED Requirements');
-        if (plan.sectionPresence.removed) sectionNames.push('## REMOVED Requirements');
-        if (plan.sectionPresence.renamed) sectionNames.push('## RENAMED Requirements');
+        if (plan.sectionPresence.added) sectionNames.push(`${sectionMarker} ADDED Requirements`);
+        if (plan.sectionPresence.modified) sectionNames.push(`${sectionMarker} MODIFIED Requirements`);
+        if (plan.sectionPresence.removed) sectionNames.push(`${sectionMarker} REMOVED Requirements`);
+        if (plan.sectionPresence.renamed) sectionNames.push(`${sectionMarker} RENAMED Requirements`);
         const hasSections = sectionNames.length > 0;
         const hasEntries = plan.added.length + plan.modified.length + plan.removed.length + plan.renamed.length > 0;
         if (!hasEntries) {
@@ -300,12 +308,16 @@ export class Validator {
 
         // Validate ADDED
         for (const block of plan.added) {
-          const key = normalizeRequirementName(block.name);
+          const key = normalizeName(block.name);
           totalDeltas++;
           if (addedNames.has(key)) {
-            issues.push({ level: 'ERROR', path: entryPath, message: `Duplicate requirement in ADDED: "${block.name}"` });
+            issues.push({ level: 'ERROR', path: entryPath, ...('line' in block ? { line: block.line } : {}), message: `Duplicate requirement in ADDED: "${block.name}"` });
           } else {
             addedNames.add(key);
+          }
+          if (org) {
+            issues.push(...this.validateOrgRequirement(block, entryPath, 'ADDED'));
+            continue;
           }
           const requirementText = this.extractRequirementText(block.raw);
           if (!requirementText) {
@@ -347,12 +359,16 @@ export class Validator {
 
         // Validate MODIFIED
         for (const block of plan.modified) {
-          const key = normalizeRequirementName(block.name);
+          const key = normalizeName(block.name);
           totalDeltas++;
           if (modifiedNames.has(key)) {
-            issues.push({ level: 'ERROR', path: entryPath, message: `Duplicate requirement in MODIFIED: "${block.name}"` });
+            issues.push({ level: 'ERROR', path: entryPath, ...('line' in block ? { line: block.line } : {}), message: `Duplicate requirement in MODIFIED: "${block.name}"` });
           } else {
             modifiedNames.add(key);
+          }
+          if (org) {
+            issues.push(...this.validateOrgRequirement(block, entryPath, 'MODIFIED'));
+            continue;
           }
           const requirementText = this.extractRequirementText(block.raw);
           if (!requirementText) {
@@ -388,7 +404,7 @@ export class Validator {
           const mainSpecFile = path.join(
             options.mainSpecsDir,
             ...specId.split('/'),
-            'spec.md'
+            specFilename
           );
           issues.push(
             ...(await this.findMainSpecModifiedIssues(
@@ -396,14 +412,15 @@ export class Validator {
               plan.renamed,
               mainSpecFile,
               entryPath,
-              options.mainSpecsDir
+              options.mainSpecsDir,
+              org
             ))
           );
         }
 
         // Validate REMOVED (names only)
         for (const name of plan.removed) {
-          const key = normalizeRequirementName(name);
+          const key = normalizeName(name);
           totalDeltas++;
           if (removedNames.has(key)) {
             issues.push({ level: 'ERROR', path: entryPath, message: `Duplicate requirement in REMOVED: "${name}"` });
@@ -414,8 +431,8 @@ export class Validator {
 
         // Validate RENAMED pairs
         for (const { from, to } of plan.renamed) {
-          const fromKey = normalizeRequirementName(from);
-          const toKey = normalizeRequirementName(to);
+          const fromKey = normalizeName(from);
+          const toKey = normalizeName(to);
           totalDeltas++;
           if (renamedFrom.has(fromKey)) {
             issues.push({ level: 'ERROR', path: entryPath, message: `Duplicate FROM in RENAMED: "${from}"` });
@@ -444,8 +461,8 @@ export class Validator {
           }
         }
         for (const { from, to } of plan.renamed) {
-          const fromKey = normalizeRequirementName(from);
-          const toKey = normalizeRequirementName(to);
+          const fromKey = normalizeName(from);
+          const toKey = normalizeName(to);
           if (modifiedNames.has(fromKey)) {
             issues.push({ level: 'ERROR', path: entryPath, message: `MODIFIED references old name from RENAMED. Use new header for "${to}"` });
           }
@@ -455,7 +472,9 @@ export class Validator {
           // Folded comparison: a case/whitespace variant of the FROM header
           // in REMOVED is the same contradiction, not a different name.
           const removedFoldMatch = [...removedNames].find(
-            (r) => foldRequirementName(r) === foldRequirementName(fromKey)
+            (r) => org
+              ? r.toLowerCase().replace(/\s+/g, ' ') === fromKey.toLowerCase().replace(/\s+/g, ' ')
+              : foldRequirementName(r) === foldRequirementName(fromKey)
           );
           if (removedFoldMatch !== undefined) {
             issues.push({
@@ -471,7 +490,7 @@ export class Validator {
 
       // Reuse archive's merge builder to report conflicts with the main specs.
       // Keep structural errors and scenario loss in their existing diagnostics.
-      if (options.mainSpecsDir) {
+      if (options.mainSpecsDir && !org) {
         issues.push(
           ...(await this.findArchiveBlockers(changeDir, options.mainSpecsDir, [
             ...issues.filter((issue) => issue.level === 'ERROR').map((issue) => issue.path),
@@ -500,7 +519,7 @@ export class Validator {
     // The same drop happens to delta sections in any other file the merge
     // path does not read (specs/<capability>.md, a note beside spec.md),
     // while the artifact graph's specs/**/*.md glob counts it as written.
-    const unreadDeltaFiles = await findUnreadDeltaFiles(specsDir);
+    const unreadDeltaFiles = org ? [] : await findUnreadDeltaFiles(specsDir);
     for (const file of unreadDeltaFiles) {
       issues.push({
         level: 'ERROR',
@@ -513,14 +532,14 @@ export class Validator {
       issues.push({
         level: 'ERROR',
         path: specPath,
-        message: `Delta sections ${this.formatSectionList(sections)} were found, but no requirement entries parsed. Ensure each section includes at least one "### Requirement:" block (REMOVED may use bullet list syntax).`,
+        message: `Delta sections ${this.formatSectionList(sections)} were found, but no requirement entries parsed. Ensure each section includes at least one "${requirementMarker} Requirement:" block${org ? '.' : ' (REMOVED may use bullet list syntax).'}`,
       });
     }
     for (const path of missingHeaderSpecs) {
       issues.push({
         level: 'ERROR',
         path,
-        message: 'No delta sections found. Add headers such as "## ADDED Requirements" or move non-delta notes outside specs/.',
+        message: `No delta sections found. Add headers such as "${sectionMarker} ADDED Requirements" or move non-delta notes outside specs/.`,
       });
     }
 
@@ -570,7 +589,7 @@ export class Validator {
       }
     }
 
-    if (options.projectRoot) {
+    if (options.projectRoot && !org) {
       issues.push(...await this.collectTaskFileIssues(changeDir, options.projectRoot));
     }
 
@@ -719,7 +738,8 @@ export class Validator {
     renamed: Array<{ from: string; to: string }>,
     mainSpecFile: string,
     entryPath: string,
-    mainSpecRoot: string
+    mainSpecRoot: string,
+    org = false,
   ): Promise<ValidationIssue[]> {
     let mainContent: string;
     assertDiscoveredSpecFile(mainSpecRoot, mainSpecFile);
@@ -746,15 +766,16 @@ export class Validator {
       ];
     }
 
+    const normalizeName = org ? (name: string) => name.trim() : normalizeRequirementName;
     const currentBlocks = new Map<string, RequirementBlock>();
-    for (const block of extractRequirementsSection(mainContent).bodyBlocks) {
-      currentBlocks.set(normalizeRequirementName(block.name), block);
-    }
+    const existingBlocks = org ? readOrgMainSpec(mainContent, path.basename(path.dirname(mainSpecFile))).blocks
+      : extractRequirementsSection(mainContent).bodyBlocks;
+    for (const block of existingBlocks) currentBlocks.set(normalizeName(block.name), block);
     // Archive applies RENAMED before MODIFIED, so a MODIFIED naming the new
     // header is compared against the renamed block's scenarios. Fall back to
     // the old header, or a rename-plus-modify pair would skip the check.
     const renamedFrom = new Map(
-      renamed.map(({ from, to }) => [normalizeRequirementName(to), normalizeRequirementName(from)])
+      renamed.map(({ from, to }) => [normalizeName(to), normalizeName(from)])
     );
 
     // Walked, not looked up once: renames chain (A→B then B→C leaves C holding
@@ -778,16 +799,18 @@ export class Validator {
     // reported ("MODIFIED references old name from RENAMED"), and the block it
     // would land on is not the one it names — so any scenario named here would
     // send the author after the wrong requirement.
-    const renamedAway = new Set(renamed.map(({ from }) => normalizeRequirementName(from)));
+    const renamedAway = new Set(renamed.map(({ from }) => normalizeName(from)));
 
     const issues: ValidationIssue[] = [];
     for (const block of modified) {
-      const key = normalizeRequirementName(block.name);
+      const key = normalizeName(block.name);
       if (renamedAway.has(key)) continue;
       const current = currentBlockFor(key);
       if (!current) continue;
-      const nextText = this.extractRequirementText(block.raw);
-      const currentTextLength = this.extractRequirementText(current.raw)?.length ?? 0;
+      const nextOrg = org ? readOrgRequirement(block.raw) : undefined;
+      const currentOrg = org ? readOrgRequirement(current.raw) : undefined;
+      const nextText = nextOrg ? nextOrg.text : this.extractRequirementText(block.raw);
+      const currentTextLength = (currentOrg ? currentOrg.text : this.extractRequirementText(current.raw))?.length ?? 0;
       if (
         nextText &&
         nextText.length > MAX_REQUIREMENT_TEXT_LENGTH &&
@@ -798,6 +821,12 @@ export class Validator {
           path: entryPath,
           message: `MODIFIED "${block.name}": ${VALIDATION_MESSAGES.REQUIREMENT_TOO_LONG}`,
         });
+      }
+      if (nextOrg && currentOrg) {
+        const names = new Set(nextOrg.scenarios.map(({ name }) => name));
+        const missing = currentOrg.scenarios.map(({ name }) => name).filter((name) => !names.has(name));
+        if (missing.length) issues.push({ level: 'ERROR', path: entryPath, message: `MODIFIED "${block.name}" omits scenario(s): ${missing.join(', ')}.` });
+        continue;
       }
       const diff = diffScenarioNames(current, block);
       if (diff.missing.length === 0) continue;
@@ -840,6 +869,52 @@ export class Validator {
    * the same one the delta path runs, on the same `#### ` blocks, so a scenario
    * that asserts nothing is reported wherever it lives.
    */
+  private validateOrgSpec(name: string, content: string, filePath: string): ValidationReport {
+    const { spec, blocks, purposeLine } = readOrgMainSpec(content, name);
+    const result = SpecSchema.safeParse(spec);
+    const issues = result.success ? [] : this.convertZodErrors(result.error).map((issue) => ({ ...issue, path: filePath }));
+    if (findPurposePlaceholderIssue(spec.overview)) {
+      issues.push({ level: 'WARNING', path: filePath, line: purposeLine, message: VALIDATION_MESSAGES.PURPOSE_IS_PLACEHOLDER });
+    } else if (spec.overview.length < MIN_PURPOSE_LENGTH) {
+      issues.push({ level: 'WARNING', path: filePath, line: purposeLine, message: VALIDATION_MESSAGES.PURPOSE_TOO_BRIEF });
+    }
+    const names = new Set<string>();
+    for (const block of blocks) {
+      if (names.has(block.name)) {
+        issues.push({ level: 'ERROR', path: filePath, line: block.line, message: `Duplicate requirement: "${block.name}"` });
+      }
+      names.add(block.name);
+      issues.push(...this.validateOrgRequirement(block, filePath));
+    }
+    return this.createReport(issues);
+  }
+
+  private validateOrgRequirement(block: RequirementBlock, filePath: string, operation?: 'ADDED' | 'MODIFIED'): ValidationIssue[] {
+    const issues: ValidationIssue[] = [];
+    const label = `${operation ?? 'Requirement'} "${block.name}"`;
+    const line = block.line;
+    const { text, scenarios } = readOrgRequirement(block.raw);
+    if (!text) {
+      issues.push({ level: 'ERROR', path: filePath, line, message: `${label} is missing requirement text` });
+    } else if (!this.containsShallOrMust(text)) {
+      issues.push({ level: 'WARNING', path: filePath, line, message: `${label} should contain SHALL or MUST in the body` });
+    }
+    if (operation !== 'MODIFIED' && text.length > MAX_REQUIREMENT_TEXT_LENGTH) {
+      issues.push({ level: 'WARNING', path: filePath, line, message: `${label}: ${VALIDATION_MESSAGES.REQUIREMENT_TOO_LONG}` });
+    }
+    if (scenarios.length === 0) {
+      issues.push({ level: operation ? 'ERROR' : 'WARNING', path: filePath, line, message: `${label} must include at least one scenario` });
+    }
+    for (const scenario of scenarios) {
+      if (scenario.hasTrigger && scenario.hasOutcome) continue;
+      issues.push({
+        level: 'WARNING', path: filePath, line: line === undefined ? undefined : line + scenario.line - 1,
+        message: `${label}: scenario "${scenario.name}" needs a trigger (*WHEN* or *GIVEN*) and an outcome (*THEN*)`,
+      });
+    }
+    return issues;
+  }
+
   private applySpecRules(spec: Spec, content: string): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
 

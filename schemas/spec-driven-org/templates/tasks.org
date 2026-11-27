@@ -1,0 +1,11 @@
+#+TITLE: Tasks
+#+STARTUP: num
+
+* TODO Example task
+:PROPERTIES:
+:TASK_ID: 1.1
+:END:
+Describe the work here or in a description heading.
+
+** 验收标准
+State what observable result demonstrates completion.

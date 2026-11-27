@@ -11,6 +11,9 @@ import {
 import { ChangeCommand } from './change.js';
 import { SpecCommand } from './spec.js';
 import { nearestMatches } from '../utils/match.js';
+import { mainSpecFormat, specFilenameFor } from '../utils/change-utils.js';
+
+const getConfiguredSpecIds = (root: string) => getSpecIds(root, specFilenameFor(mainSpecFormat(root)));
 
 type ItemType = 'change' | 'spec';
 
@@ -90,7 +93,7 @@ export class ShowCommand {
       return;
     }
 
-    const specs = await getSpecIds(root.path);
+    const specs = await getConfiguredSpecIds(root.path);
     if (specs.length === 0) {
       console.error('No specs found.');
       process.exitCode = 1;
@@ -115,10 +118,10 @@ export class ShowCommand {
       changes = await getActiveChangeIds(root.path);
       isChange = changes.includes(itemName);
     } else if (params.typeOverride === 'spec') {
-      specs = await getSpecIds(root.path);
+      specs = await getConfiguredSpecIds(root.path);
       isSpec = specs.includes(itemName);
     } else {
-      [changes, specs] = await Promise.all([getActiveChangeIds(root.path), getSpecIds(root.path)]);
+      [changes, specs] = await Promise.all([getActiveChangeIds(root.path), getConfiguredSpecIds(root.path)]);
       isChange = changes.includes(itemName);
       isSpec = specs.includes(itemName);
     }

@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from 'fs';
 import path, { join } from 'path';
 import { MarkdownParser } from '../core/parsers/markdown-parser.js';
+import { readOrgMainSpec } from '../core/parsers/org-structure.js';
+import { mainSpecFormat, specFilenameFor } from '../utils/change-utils.js';
 import { Validator } from '../core/validation/validator.js';
 import type { Spec } from '../core/schemas/index.js';
 import type { RootOutput } from '../core/root-selection.js';
@@ -34,11 +36,10 @@ export interface ShowOptions {
   rootOutput?: RootOutput;
 }
 
-function parseSpecFromFile(specsDir: string, specPath: string, specId: string): Spec {
+function parseSpecFromFile(specsDir: string, specPath: string, specId: string, format: 'markdown' | 'org'): Spec {
   assertSpecPath(specsDir, specPath);
   const content = readFileSync(specPath, 'utf-8');
-  const parser = new MarkdownParser(content);
-  return parser.parseSpec(specId);
+  return format === 'org' ? readOrgMainSpec(content, specId).spec : new MarkdownParser(content).parseSpec(specId);
 }
 
 function validateRequirementIndex(spec: Spec, requirementOpt?: string): number | undefined {
@@ -97,7 +98,8 @@ export class SpecCommand {
   async show(specId?: string, options: ShowOptions = {}): Promise<void> {
     if (!specId) {
       const canPrompt = isInteractive(options);
-      const specIds = await getSpecIds(this.rootPath ?? process.cwd());
+      const root = this.rootPath ?? process.cwd();
+      const specIds = await getSpecIds(root, specFilenameFor(mainSpecFormat(root)));
       if (canPrompt && specIds.length > 0) {
         const { select } = await import('@inquirer/prompts');
         specId = await select({
@@ -109,12 +111,14 @@ export class SpecCommand {
       }
     }
 
-    const specPath = join(this.specsDir, specId, 'spec.md');
+    const format = mainSpecFormat(this.rootPath ?? process.cwd());
+    const filename = specFilenameFor(format);
+    const specPath = join(this.specsDir, specId, filename);
     assertSpecPath(this.specsDir, specPath);
     if (!existsSync(specPath)) {
       // Root-aware callers get the absolute path; the cwd-based noun form
       // keeps its historical forward-slash relative message on all platforms.
-      const displayPath = this.rootPath ? specPath : `openspec/specs/${specId}/spec.md`;
+      const displayPath = this.rootPath ? specPath : `openspec/specs/${specId}/${filename}`;
       throw new Error(`Spec '${specId}' not found at ${displayPath}`);
     }
 
@@ -122,7 +126,7 @@ export class SpecCommand {
       if (options.requirements && options.requirement) {
         throw new Error('Options --requirements and --requirement cannot be used together');
       }
-      const parsed = parseSpecFromFile(this.specsDir, specPath, specId);
+      const parsed = parseSpecFromFile(this.specsDir, specPath, specId, format);
       const filtered = filterSpec(parsed, options);
       const output = {
         id: specId,
@@ -160,12 +164,13 @@ export async function specListCommand(options: { json?: boolean; long?: boolean 
       return;
     }
 
-    const discovered = await discoverSpecFiles(SPECS_DIR);
+    const format = mainSpecFormat(process.cwd());
+    const discovered = await discoverSpecFiles(SPECS_DIR, specFilenameFor(format));
     const specs = discovered
       .map(({ id, specFile }) => {
         try {
           assertSpecPath(SPECS_DIR, specFile);
-          const spec = parseSpecFromFile(SPECS_DIR, specFile, id);
+          const spec = parseSpecFromFile(SPECS_DIR, specFile, id, format);
 
           return {
             id,
@@ -210,7 +215,8 @@ export async function specValidateCommand(
   try {
     if (!specId) {
       const canPrompt = isInteractive(options);
-      const specIds = await getSpecIds();
+      const root = process.cwd();
+      const specIds = await getSpecIds(root, specFilenameFor(mainSpecFormat(root)));
       if (canPrompt && specIds.length > 0) {
         const { select } = await import('@inquirer/prompts');
         specId = await select({
@@ -222,16 +228,18 @@ export async function specValidateCommand(
       }
     }
 
-    const specPath = join(SPECS_DIR, specId, 'spec.md');
+    const format = mainSpecFormat(process.cwd());
+    const filename = specFilenameFor(format);
+    const specPath = join(SPECS_DIR, specId, filename);
     assertSpecPath(SPECS_DIR, specPath);
     
     if (!existsSync(specPath)) {
-      throw new Error(`Spec '${specId}' not found at openspec/specs/${specId}/spec.md`);
+      throw new Error(`Spec '${specId}' not found at openspec/specs/${specId}/${filename}`);
     }
 
     const validator = new Validator(options.strict);
     assertSpecPath(SPECS_DIR, specPath);
-    const report = await validator.validateSpec(specPath);
+    const report = await validator.validateSpec(specPath, format);
 
     if (options.json) {
       console.log(JSON.stringify(report, null, 2));

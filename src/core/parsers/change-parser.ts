@@ -1,5 +1,6 @@
 import { MarkdownParser, Section } from './markdown-parser.js';
 import { buildCodeFenceMask } from './requirement-text.js';
+import { orgBlockToRequirement, readOrgDelta, readOrgProposal } from './org-structure.js';
 import { parseDeltaSpec, stripClosingSequence, type DeltaPlan, type RequirementBlock } from './requirement-blocks.js';
 import { Change, Delta, DeltaOperation, Requirement } from '../schemas/index.js';
 import path from 'path';
@@ -21,12 +22,24 @@ function removedNameBlock(name: string): RequirementBlock {
 export class ChangeParser extends MarkdownParser {
   private changeDir: string;
 
-  constructor(content: string, changeDir: string) {
-    super(content);
+  private readonly orgContent: string | undefined;
+
+  constructor(content: string, changeDir: string, format: 'markdown' | 'org' = 'markdown') {
+    super(format === 'org' ? '' : content);
     this.changeDir = changeDir;
+    this.orgContent = format === 'org' ? content : undefined;
   }
 
   async parseChangeWithDeltas(name: string): Promise<Change> {
+    if (this.orgContent !== undefined) {
+      const proposal = readOrgProposal(this.orgContent, name);
+      const specFiles = await discoverSpecFiles(path.join(this.changeDir, 'specs'), 'spec.org');
+      for (const { id, specFile } of specFiles) {
+        const plan = readOrgDelta(await fs.readFile(specFile, 'utf-8'));
+        proposal.deltas.push(...this.parseSpecDeltas(id, plan));
+      }
+      return proposal;
+    }
     const sections = this.parseSections();
     const why = this.findSection(sections, 'Why')?.content || '';
     const whatChanges = this.findSection(sections, 'What Changes')?.content || '';
@@ -141,8 +154,31 @@ export class ChangeParser extends MarkdownParser {
       });
     });
 
-    // Parse REMOVED requirements, in document order. A bullet-form entry
-    // carries only a name, so it reads as a header-form removal with no body.
+    // Org removals carry a name and optional reason, not a live requirement
+    // with scenarios. Keep the body in the delta description without treating it as one.
+    if (this.orgContent !== undefined) {
+      for (const block of plan.removedBlocks) {
+        const { text } = orgBlockToRequirement(block);
+        deltas.push({ spec: specName, operation: 'REMOVED', description: `Remove requirement: ${block.name}${text ? `\n${text}` : ''}` });
+      }
+    } else {
+      this.appendMarkdownRemovals(deltas, specName, plan);
+    }
+
+    for (const rename of plan.renamed) {
+      deltas.push({
+        spec: specName,
+        operation: 'RENAMED',
+        description: `Rename requirement from "${rename.from}" to "${rename.to}"`,
+        rename,
+      });
+    }
+    return deltas;
+  }
+
+  private appendMarkdownRemovals(deltas: Delta[], specName: string, plan: DeltaPlan): void {
+    // A bullet-form Markdown removal carries only a name, so it reads as a
+    // header-form removal with no body.
     const removedBlocks = [...plan.removedBlocks];
     const removed = plan.removed.map((name) => {
       const index = removedBlocks.findIndex((block) => block.name === name);
@@ -158,17 +194,6 @@ export class ChangeParser extends MarkdownParser {
       });
     });
 
-    // Parse RENAMED requirements
-    plan.renamed.forEach(rename => {
-      deltas.push({
-        spec: specName,
-        operation: 'RENAMED' as DeltaOperation,
-        description: `Rename requirement from "${rename.from}" to "${rename.to}"`,
-        rename,
-      });
-    });
-
-    return deltas;
   }
 
   /**
@@ -176,6 +201,7 @@ export class ChangeParser extends MarkdownParser {
    * header filter above) as before, so text and scenarios are unchanged.
    */
   private toRequirements(blocks: RequirementBlock[]): Requirement[] {
+    if (this.orgContent !== undefined) return blocks.map(orgBlockToRequirement);
     return blocks.flatMap((block) => {
       const [headerLine, ...body] = block.raw.split('\n');
       // Canonical header: the delta reader also accepts `###Requirement:` with

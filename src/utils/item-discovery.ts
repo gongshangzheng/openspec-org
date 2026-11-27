@@ -26,9 +26,12 @@ export async function getActiveChangeIds(root: string = process.cwd()): Promise<
   }
 }
 
-export async function getSpecIds(root: string = process.cwd()): Promise<string[]> {
+export async function getSpecIds(
+  root: string = process.cwd(),
+  specFilename: 'spec.md' | 'spec.org' = 'spec.md',
+): Promise<string[]> {
   const specsPath = path.join(root, 'openspec', 'specs');
-  const discovered = await discoverSpecFiles(specsPath);
+  const discovered = await discoverSpecFiles(specsPath, specFilename);
   return discovered.map((spec) => spec.id);
 }
 

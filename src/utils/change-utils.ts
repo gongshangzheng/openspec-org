@@ -1,6 +1,6 @@
 import path from 'path';
 import { FileSystemUtils } from './file-system.js';
-import { writeChangeMetadata, validateSchemaName } from './change-metadata.js';
+import { METADATA_FILENAME, resolveSchemaForChange, writeChangeMetadata, validateSchemaName } from './change-metadata.js';
 import { formatLocalDate } from './date.js';
 import { readProjectConfig } from '../core/project-config.js';
 import { isKebabId } from '../core/id.js';
@@ -9,6 +9,24 @@ import { isSpecsArtifactPath } from '../core/artifact-graph/outputs.js';
 import type { ChangeMetadata } from '../core/change-metadata/index.js';
 
 const DEFAULT_SCHEMA = 'spec-driven';
+
+function formatForSchema(schema?: string): 'markdown' | 'org' {
+  return schema?.replace(/\.ya?ml$/, '') === 'spec-driven-org' ? 'org' : 'markdown';
+}
+
+export function mainSpecFormat(projectRoot: string): 'markdown' | 'org' {
+  return formatForSchema(readProjectConfig(projectRoot)?.schema);
+}
+
+export function changeArtifactFormat(projectRoot: string, changeDir: string): 'markdown' | 'org' {
+  // A linked change directory is its own trust root, like its proposal.
+  FileSystemUtils.assertPathWithin(changeDir, path.join(changeDir, METADATA_FILENAME));
+  return formatForSchema(resolveSchemaForChange(changeDir, undefined, projectRoot));
+}
+
+export function specFilenameFor(format: 'markdown' | 'org'): 'spec.md' | 'spec.org' {
+  return format === 'org' ? 'spec.org' : 'spec.md';
+}
 
 /**
  * Options for creating a change.

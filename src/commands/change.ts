@@ -17,6 +17,8 @@ import { getTaskProgressForChange } from '../utils/task-progress.js';
 import { FileSystemUtils } from '../utils/file-system.js';
 import { assertDiscoveredSpecFile } from '../utils/spec-path-containment.js';
 import { discoverSpecFiles } from '../utils/spec-discovery.js';
+import { changeArtifactFormat, mainSpecFormat, specFilenameFor } from '../utils/change-utils.js';
+import { readOrgDelta, readOrgMainSpec } from '../core/parsers/org-structure.js';
 import {
   foldRequirementName,
   parseDeltaSpec,
@@ -118,11 +120,17 @@ export class ChangeCommand {
     }
 
     const changeDir = path.join(changesPath, changeName);
-    const proposalPath = path.join(changeDir, 'proposal.md');
-
     if (!isChangeDirectoryName(changesPath, changeDir)) {
-      throw new Error(`Change "${changeName}" not found at ${proposalPath}`);
+      throw new Error(`Change "${changeName}" not found at ${path.join(changeDir, 'proposal.md')}`);
     }
+    const stat = await fs.stat(changeDir).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') throw error;
+      return undefined;
+    });
+    if (!stat?.isDirectory()) throw new Error(`Change "${changeName}" not found at ${path.join(changeDir, 'proposal.md')}`);
+    const format = changeArtifactFormat(this.rootPath ?? process.cwd(), changeDir);
+    const proposalFilename = format === 'org' ? 'proposal.org' : 'proposal.md';
+    const proposalPath = path.join(changeDir, proposalFilename);
 
     try {
       await fs.access(proposalPath);
@@ -133,39 +141,28 @@ export class ChangeCommand {
       // change that does exist as missing. A stray file under changes/ is not a
       // change, and naming it one would point the user at a `status --change`
       // call that cannot work.
-      const isChangeDirectory = await fs
-        .stat(changeDir)
-        .then((stats) => stats.isDirectory())
-        .catch(() => false);
-      if (isChangeDirectory) {
-        // A folder holding nested change directories has no proposal of its
-        // own and never will; pointing at `status --change` would send the
-        // user down a second dead end (#1846).
-        const nested = await findNestedChangesIn(changesPath, changeName);
-        if (nested) {
-          throw new Error(describeNestedChange(nested));
-        }
-        throw new Error(
-          `Change "${changeName}" has no proposal.md yet. ` +
-            `Run "openspec status --change ${changeName}" to see which artifact comes next.`
-        );
-      }
-      throw new Error(`Change "${changeName}" not found at ${proposalPath}`);
+      // Namespace folders have no proposal of their own (#1846).
+      const nested = await findNestedChangesIn(changesPath, changeName);
+      if (nested) throw new Error(describeNestedChange(nested));
+      throw new Error(
+        `Change "${changeName}" has no ${proposalFilename} yet. ` +
+          `Run "openspec status --change ${changeName}" to see which artifact comes next.`
+      );
     }
     FileSystemUtils.assertPathWithin(path.dirname(proposalPath), proposalPath);
 
     if (options?.json) {
       FileSystemUtils.assertPathWithin(changeDir, proposalPath);
-      const jsonOutput = await this.converter.convertChangeToJson(proposalPath);
+      const contentForTitle = await fs.readFile(proposalPath, 'utf-8');
+      const parsed: Change = format === 'org'
+        ? await new ChangeParser(contentForTitle, changeDir, format).parseChangeWithDeltas(changeName)
+        : JSON.parse(await this.converter.convertChangeToJson(proposalPath));
 
       if (options.requirementsOnly) {
         console.error('Flag --requirements-only is deprecated; use --deltas-only instead.');
       }
 
-      const parsed: Change = JSON.parse(jsonOutput);
-      FileSystemUtils.assertPathWithin(changeDir, proposalPath);
-      const contentForTitle = await fs.readFile(proposalPath, 'utf-8');
-      const title = this.extractTitle(contentForTitle, changeName);
+      const title = this.extractTitle(contentForTitle, changeName, format);
       const id = parsed.name;
       const deltas = parsed.deltas || [];
 
@@ -201,13 +198,21 @@ export class ChangeCommand {
     changeName: string,
     changesPath: string
   ): Promise<{ capabilities: string[]; results: RequirementDiff[] }> {
-    const specsDir = path.join(changesPath, changeName, 'specs');
+    const changeDir = path.join(changesPath, changeName);
+    const specsDir = path.join(changeDir, 'specs');
     const mainSpecsDir = this.getSpecsPath();
+    const root = this.rootPath ?? process.cwd();
+    const format = changeArtifactFormat(root, changeDir);
+    const mainFormat = mainSpecFormat(root);
+    const specFilename = specFilenameFor(format);
+    const mainFilename = specFilenameFor(mainFormat);
+    const org = format === 'org';
+    const fold = org ? (name: string) => name.trim().toLowerCase().replace(/\s+/g, ' ') : foldRequirementName;
 
     // Same discovery ChangeParser uses, so a nested capability (specs/<area>/<id>)
     // is diffed rather than silently skipped, and the ids here match the `spec`
     // field of the JSON deltas.
-    const discovered = await discoverSpecFiles(specsDir);
+    const discovered = await discoverSpecFiles(specsDir, specFilename);
 
     const capabilities = discovered.map(spec => spec.id);
     const results: RequirementDiff[] = [];
@@ -215,7 +220,7 @@ export class ChangeCommand {
     for (const { id: capability, specFile: deltaSpecPath } of discovered) {
       const deltaContent = await fs.readFile(deltaSpecPath, 'utf-8');
 
-      const mainSpecPath = path.join(mainSpecsDir, ...capability.split('/'), 'spec.md');
+      const mainSpecPath = path.join(mainSpecsDir, ...capability.split('/'), mainFilename);
       let mainContent: string | null = null;
       try {
         assertDiscoveredSpecFile(mainSpecsDir, mainSpecPath);
@@ -226,8 +231,8 @@ export class ChangeCommand {
         // capability case; MODIFIED requirements are handled as a mismatch below.
       }
 
-      const plan = parseDeltaSpec(deltaContent);
-      const renameMap = buildRenameMap(plan.renamed);
+      const plan = org ? readOrgDelta(deltaContent) : parseDeltaSpec(deltaContent);
+      const renameMap = org ? new Map(plan.renamed.map(({ from, to }) => [fold(to), from])) : buildRenameMap(plan.renamed);
 
       for (const block of plan.added) {
         results.push({ capability, operation: 'ADDED', requirementName: block.name, raw: block.raw });
@@ -236,15 +241,15 @@ export class ChangeCommand {
       // Prefer the authored REMOVED block so its Reason/Migration text reaches
       // the reader; the bullet-list form carries a name and nothing else.
       const removedBlocks = new Map(
-        plan.removedBlocks.map(block => [foldRequirementName(block.name), block.raw])
+        plan.removedBlocks.map(block => [fold(block.name), block.raw])
       );
       for (const name of plan.removed) {
-        const raw = removedBlocks.get(foldRequirementName(name));
+        const raw = removedBlocks.get(fold(name));
         results.push({
           capability,
           operation: 'REMOVED',
           requirementName: name,
-          raw: raw ?? `### Requirement: ${name}`,
+          raw: raw ?? `${org ? '**' : '###'} Requirement: ${name}`,
         });
       }
 
@@ -262,10 +267,12 @@ export class ChangeCommand {
 
         // A requirement renamed and modified in the same delta still lives in
         // the main spec under its old name, so look it up there.
-        const oldName = renameMap.get(foldRequirementName(block.name));
+        const oldName = renameMap.get(fold(block.name));
         const lookupName = oldName ?? block.name;
 
-        const match = mainContent ? extractRequirementBlock(mainContent, lookupName) : null;
+        const match = mainContent && mainFormat === 'org'
+          ? this.findOrgRequirement(mainContent, capability, lookupName)
+          : mainContent ? extractRequirementBlock(mainContent, lookupName) : null;
         if (match) {
           entry.diff = diffRequirementBlock(match.raw, block.raw, `${capability}/${block.name}`);
           if (!match.exact) {
@@ -283,7 +290,7 @@ export class ChangeCommand {
           // missing main spec is an authoring error, not a new capability.
           // Rendering it as all-additions would hide what archive will reject.
           entry.warning =
-            `No main spec at openspec/specs/${capability}/spec.md, ` +
+            `No main spec at openspec/specs/${capability}/${mainFilename}, ` +
             `so MODIFIED requirement "${block.name}" has nothing to diff against`;
         }
 
@@ -292,6 +299,15 @@ export class ChangeCommand {
     }
 
     return { capabilities, results };
+  }
+
+  private findOrgRequirement(content: string, capability: string, name: string) {
+    const { blocks } = readOrgMainSpec(content, capability);
+    const exact = blocks.find((block) => block.name === name);
+    if (exact) return { ...exact, exact: true };
+    const fold = (value: string) => value.toLowerCase().replace(/\s+/g, ' ');
+    const similar = blocks.find((block) => fold(block.name) === fold(name));
+    return similar ? { ...similar, exact: false } : null;
   }
 
   /**
@@ -434,7 +450,8 @@ export class ChangeCommand {
       const changeDetails = await Promise.all(
         changes.map(async (changeName) => {
           const changeDir = path.join(changesPath, changeName);
-          const proposalPath = path.join(changeDir, 'proposal.md');
+          const format = changeArtifactFormat(process.cwd(), changeDir);
+          const proposalPath = path.join(changeDir, format === 'org' ? 'proposal.org' : 'proposal.md');
 
           // Resolve task progress through the shared tracked-tasks helper so
           // this deprecated noun-form list cannot re-fork the resolution
@@ -453,12 +470,12 @@ export class ChangeCommand {
           try {
             FileSystemUtils.assertPathWithin(changeDir, proposalPath);
             const content = await fs.readFile(proposalPath, 'utf-8');
-            const parser = new ChangeParser(content, changeDir);
+            const parser = new ChangeParser(content, changeDir, format);
             const change = await parser.parseChangeWithDeltas(changeName);
 
             return {
               id: changeName,
-              title: this.extractTitle(content, changeName),
+              title: this.extractTitle(content, changeName, format),
               deltaCount: change.deltas.length,
               taskStatus,
             };
@@ -485,18 +502,20 @@ export class ChangeCommand {
       // Long format: id: title and minimal counts
       for (const changeName of sorted) {
         const changeDir = path.join(changesPath, changeName);
-        const proposalPath = path.join(changeDir, 'proposal.md');
+        const format = changeArtifactFormat(process.cwd(), changeDir);
+        const proposalFilename = format === 'org' ? 'proposal.org' : 'proposal.md';
+        const proposalPath = path.join(changeDir, proposalFilename);
         const { total, completed } = await getTaskProgressForChange(changesPath, changeName, process.cwd());
         const taskStatusText = total > 0 ? ` [tasks ${completed}/${total}]` : '';
         if (await isDefinitelyMissing(proposalPath)) {
-          console.log(`${changeName}: (no proposal.md yet)${taskStatusText}`);
+          console.log(`${changeName}: (no ${proposalFilename} yet)${taskStatusText}`);
           continue;
         }
         try {
           FileSystemUtils.assertPathWithin(changeDir, proposalPath);
           const content = await fs.readFile(proposalPath, 'utf-8');
-          const title = this.extractTitle(content, changeName);
-          const parser = new ChangeParser(content, changeDir);
+          const title = this.extractTitle(content, changeName, format);
+          const parser = new ChangeParser(content, changeDir, format);
           const change = await parser.parseChangeWithDeltas(changeName);
           const deltaCountText = ` [deltas ${change.deltas.length}]`;
           console.log(`${changeName}: ${title}${deltaCountText}${taskStatusText}`);
@@ -543,11 +562,12 @@ export class ChangeCommand {
     }
     
     const validator = new Validator(options?.strict || false);
+    const projectRoot = path.dirname(path.dirname(changesPath));
+    const format = changeArtifactFormat(projectRoot, changeDir);
     const report = await validator.validateChangeDeltaSpecs(changeDir, {
-      // Derived from changesPath so the main specs come from the same root the
-      // change itself was resolved against.
-      mainSpecsDir: path.join(path.dirname(changesPath), 'specs'),
-      projectRoot: path.dirname(path.dirname(changesPath)),
+      mainSpecsDir: format === mainSpecFormat(projectRoot) ? path.join(path.dirname(changesPath), 'specs') : undefined,
+      projectRoot,
+      format,
     });
     
     if (options?.json) {
@@ -572,8 +592,8 @@ export class ChangeCommand {
     }
   }
 
-  private extractTitle(content: string, changeName: string): string {
-    const match = content.match(/^#\s+(?:Change:\s+)?(.+)$/im);
+  private extractTitle(content: string, changeName: string, format: 'markdown' | 'org'): string {
+    const match = content.match(format === 'org' ? /^#\+TITLE:[ \t]*(.+)$/im : /^#\s+(?:Change:\s+)?(.+)$/im);
     const title = match?.[1].trim();
     // The packaged template opens every proposal with a bare `# Proposal`,
     // which names the document rather than the change.

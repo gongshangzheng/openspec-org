@@ -1,0 +1,12 @@
+#+TITLE: Spec Delta
+
+* Purpose
+# Include Purpose only for a new capability.
+
+* ADDED Requirements
+** Requirement: Example requirement
+The system SHALL describe the behavior using native Org prose.
+
+*** Scenario: Example outcome
+- *WHEN* the user runs ~openspec status~
+- *THEN* the output lists *required* artifacts and identifies /optional/ artifacts.

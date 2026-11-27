@@ -1,0 +1,86 @@
+#+STARTUP: num
+
+* DONE Add an opt-in Org schema and native templates
+:PROPERTIES:
+:TASK_ID: 1.1
+:END:
+Add schemas/spec-driven-org/schema.yaml and four Org templates under schemas/spec-driven-org/templates/. Reuse src/core/artifact-graph/ and src/commands/workflow/ as needed. Leave schemas/spec-driven/ unchanged.
+** 验收标准
+`test/commands/artifact-workflow.test.ts` 验证默认 Markdown 不变，`schema: spec-driven-org` 解析到四份 Org 模板并保留依赖图，已有 change 继续使用记录的 schema。用 Emacs `-Q` 打开 `schemas/spec-driven-org/templates/tasks.org` 和当前 `tasks.org`，两者都通过 `#+STARTUP: num` 自动开启 `org-num-mode`，原有 `:TASK_ID:` 不变。
+
+** 验收结果
+*** [PASS] 2026-11-27T02:59:58.445Z 验证可选 Org schema 和 Markdown 默认行为
+:PROPERTIES:
+:RESULT: pass
+:CRITERIA_SHA256: ff47fe9151375c6876de8a6025f63197998f72672061f3f4d4aaef29eb0b8bc5
+:RECORDED_AT: 2026-11-27T02:59:58.445Z
+:END:
+`pnpm exec vitest run test/commands/artifact-workflow.test.ts test/core/artifact-graph/resolver.test.ts test/commands/schema.test.ts`：3 个测试文件、187 项通过。新测试先在缺少 schema 时以 `Unknown schema 'spec-driven-org'` 失败；新增后验证默认 Markdown、配置选用 Org、四份原生模板、依赖图一致、嵌套 `spec.org` 和既有 change 元数据保留。`git diff --check` 与 `git diff --exit-code -- schemas/spec-driven` 均通过。
+*** [FAIL] 2026-11-27T03:14:26.810Z 新增编号验收标准，模板尚未设置
+:PROPERTIES:
+:RESULT: fail
+:CRITERIA_SHA256: 640ef0c516a70a938e49766e78294d5aeb42eb586349c8ac6e6c2432cefa4452
+:RECORDED_AT: 2026-11-27T03:14:26.810Z
+:END:
+用户确认任务模板及当前任务文件应文件级开启 org-num-mode。现有模板与当前任务文件尚无 `#+STARTUP: num`；原有 PASS 对应旧标准，保留历史，不作为新标准的完成依据。
+*** [PASS] 2026-11-27T03:15:34.892Z 任务文件自动启用 Org 编号并保持 ID
+:PROPERTIES:
+:RESULT: pass
+:CRITERIA_SHA256: 640ef0c516a70a938e49766e78294d5aeb42eb586349c8ac6e6c2432cefa4452
+:RECORDED_AT: 2026-11-27T03:15:34.892Z
+:END:
+Emacs `-Q --batch` 分别加载 `schemas/spec-driven-org/templates/tasks.org` 和当前 `tasks.org`，两个缓冲区的 `org-num-mode` 都为真；模板的 `TASK_ID` 为 `1.1`，当前任务文件依次为 `1.1`、`1.2`、`1.3`、`1.4`。`pnpm exec vitest run test/commands/artifact-workflow.test.ts test/core/artifact-graph/resolver.test.ts test/commands/schema.test.ts` 通过 187 项；`openspec validate adopt-native-org-workflow --strict` 与 `git diff --check` 通过。
+* DONE Parse native Org structure and preserve source markup
+:PROPERTIES:
+:TASK_ID: 1.2
+:END:
+在 `src/core/parsers/org-structure.ts` 实现原生 Org 结构读取，并接入 `src/core/parsers/` 的 change/spec 读路径和 `src/core/validation/validator.ts`。在 `src/utils/spec-discovery.ts` 增加按调用方指定的规格文件名查找的能力；默认 Markdown 调用保持原行为。在保留正文行内标记的同时识别标题、区块和场景步骤。
+** 验收标准
+`test/core/parsers/org-structure.test.ts` 与相关 `test/core/validation*.test.ts` 覆盖四种 delta 操作、LF/CRLF/CR、源代码及示例区块、源路径和行号，以及加重、斜体、代码和原样文本标记的保留。Org 目录级验证只读取选定的 `spec.org`，不以同目录 `spec.md` 代替；既有 Markdown 解析和验证测试继续通过。
+
+** 验收结果
+*** [BLOCKED] 2026-11-27T03:01:48.016Z Org delta 验证依赖规格文件发现
+:PROPERTIES:
+:RESULT: blocked
+:CRITERIA_SHA256: 233ebd4169b39f2936279f370fa4bdf8d6843100cffbb74c024917110b594159
+:RECORDED_AT: 2026-11-27T03:01:48.016Z
+:END:
+`src/core/validation/validator.ts:192` 通过 `discoverSpecFiles` 取得 delta 文件，`src/utils/spec-discovery.ts:43` 只接受 `spec.md`。因此 1.2 即使新增 Org 解析器，目录级验证仍无法读到 `spec.org` 并报告源位置。`design.md` 把该发现工具列在 1.3；按串行规则停止，未修改 1.2 实现，等待确认调整任务边界。
+*** [PASS] 2026-11-27T03:24:26.753Z 验证原生 Org 解析、规格发现与源位置
+:PROPERTIES:
+:RESULT: pass
+:CRITERIA_SHA256: ed97cc0fd1396de6ac79c87445a50b3eea1c7ed496bdcfd3feb5a6b1a1dca42b
+:RECORDED_AT: 2026-11-27T03:24:26.753Z
+:END:
+`pnpm run build` 通过。`pnpm exec vitest run test/core/parsers test/core/validation test/utils/spec-discovery.test.ts test/commands/artifact-workflow.test.ts test/commands/validate.test.ts`：27 个文件，574 项通过。覆盖四种 delta 操作、LF/CRLF/CR、区块内伪标题或伪步骤、原始行内标记、原始文件和行号；同目录 Markdown 不会替代缺失的 Org delta。Markdown 解析、验证和查找回归通过。`git diff --check` 通过。
+* DONE Resolve CLI reads by the selected workflow
+:PROPERTIES:
+:TASK_ID: 1.3
+:END:
+在 `src/commands/`、`src/core/list.ts`、`src/utils/change-utils.ts` 和 `src/core/templates/workflows/` 接入所选工作流。按解析后的 planning home 或 change schema 选择产物和 1.2 的底层读取能力，不探测扩展名作为回退。
+** 验收标准
+Relevant tests under test/commands/ demonstrate list, show and strict validate choose the selected format for nested capabilities even when files of both extensions exist, and do not substitute the other format if the selected artifact is missing. Verify output remains inside the resolved planning scope and existing Markdown behavior is unchanged.
+
+** 验收结果
+*** [PASS] 2026-11-27T03:35:54.080Z 验证 CLI 按所选 schema 读取 Markdown 或 Org
+:PROPERTIES:
+:RESULT: pass
+:CRITERIA_SHA256: 81eb5680dcf562af27e2e1e27dc78362af601cd8b9fc48ac0943acff4c7a0dee
+:RECORDED_AT: 2026-11-27T03:35:54.080Z
+:END:
+`pnpm run build` 通过。Vitest 15 个文件、366 项通过，涵盖 `test/commands/org-artifact-selection.test.ts`、show/diff/spec/validate、list、schema/workflow、模板、路径校验、store 和启动依赖回归。并列两种扩展名时按 planning home 或 change schema 选择；删除选中目标后 list/show/strict validate 不回退。`git diff --check` 通过。
+* TODO Verify both workflows on Windows and Unix
+:PROPERTIES:
+:TASK_ID: 1.4
+:END:
+Add a joined Markdown/Org journey under test/cli-e2e/; run it through the existing .github/workflows/ci.yml matrix after the preceding tests pass.
+** 验收标准
+Record passing Windows and Unix runs of default Markdown and opt-in Org from change scaffold through status, nested spec discovery and strict validation. Include a CRLF Org fixture and confirm default Markdown output remains unchanged.
+** 验收结果
+*** [PARTIAL] 2026-11-27T03:50:13.466Z macOS 双格式端到端及全量回归通过，待 Windows CI
+:PROPERTIES:
+:RESULT: partial
+:CRITERIA_SHA256: 3ecb85aeba461081cad35eb9db3ba176f06a22dd760c4cd641168a1598bfa090
+:RECORDED_AT: 2026-11-27T03:50:13.466Z
+:END:
+新增 `test/cli-e2e/markdown-org-workflow.test.ts`，两例从 init/new change 到 status、嵌套规格 list/show、主规格和 delta 严格验证均在 macOS 通过。Org 例使用 CRLF 和 Markdown 干扰文件；Markdown 例确认默认 schema、路径与原样输出。`pnpm test` 在 macOS：253 个文件通过、1 个跳过；6525 项通过、19 项跳过。现有 `.github/workflows/ci.yml` 包含 Windows、macOS、Linux 的 `pnpm test` 矩阵；未推送或运行远端 CI，Windows 结果未取得，不标 DONE。

@@ -3,6 +3,8 @@ import path from 'path';
 import { getTaskProgressForChange, formatTaskStatus } from '../utils/task-progress.js';
 import { readFileSync, type Dirent } from 'fs';
 import { MarkdownParser } from './parsers/markdown-parser.js';
+import { readOrgMainSpec } from './parsers/org-structure.js';
+import { mainSpecFormat, specFilenameFor } from '../utils/change-utils.js';
 import type { RootOutput } from './root-selection.js';
 import { discoverSpecFiles } from '../utils/spec-discovery.js';
 import {
@@ -260,7 +262,8 @@ export class ListCommand {
       return;
     }
 
-    const discovered = await discoverSpecFiles(specsDir);
+    const format = mainSpecFormat(targetPath);
+    const discovered = await discoverSpecFiles(specsDir, specFilenameFor(format));
     if (discovered.length === 0) {
       if (json) {
         console.log(JSON.stringify({ specs: [], ...(root ? { root } : {}) }, null, 2));
@@ -275,8 +278,7 @@ export class ListCommand {
     for (const { id, specFile } of discovered) {
       try {
         const content = readFileSync(specFile, 'utf-8');
-        const parser = new MarkdownParser(content);
-        const spec = parser.parseSpec(id);
+        const spec = format === 'org' ? readOrgMainSpec(content, id).spec : new MarkdownParser(content).parseSpec(id);
         specs.push({ id, requirementCount: spec.requirements.length });
       } catch {
         // If spec cannot be read or parsed, include with 0 count
