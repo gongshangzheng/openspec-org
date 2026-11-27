@@ -11,6 +11,7 @@ import { registerStoreCommand } from './commands/store.js';
 import { registerDoctorCommand } from './commands/doctor.js';
 import { registerContextCommand } from './commands/context.js';
 import { registerWorksetCommand } from './commands/workset.js';
+import { registerTaskCommand } from './commands/task.js';
 import { DEFAULT_SCHEMA } from '../commands/workflow/default-schema.js';
 import type {
   StatusOptions,
@@ -611,6 +612,26 @@ changeCmd
   });
 
 program
+  .command('sync [change-name]')
+  .description('Sync delta specs from an active change to main specs')
+  .option('--json', 'Output as JSON')
+  .option('--store <id>', STORE_OPTION_DESCRIPTION)
+  .addOption(hiddenStorePathOption())
+  .action(async (changeName?: string, options?: { json?: boolean; store?: string; storePath?: string }) => {
+    try {
+      const { syncCommand } = await import('../commands/sync.js');
+      await syncCommand(changeName, options);
+    } catch (error) {
+      await failWithError(error, {
+        enabled: options?.json,
+        payload: { change: changeName ?? null, synced: false, specs: [], root: null },
+        fallbackCode: 'sync_error',
+      });
+      process.exitCode = 1;
+    }
+  });
+
+program
   .command('archive [change-name]')
   .description('Archive a completed change and update main specs')
   .option('-y, --yes', 'Skip confirmation prompts')
@@ -836,26 +857,7 @@ program
     }
   });
 
-const task = program.command('task').description('Read native Org tasks');
-for (const action of ['list', 'show', 'next'] as const) {
-  const command = task.command(action === 'show' ? 'show <task-id>' : action)
-    .description(action === 'list' ? 'List tasks in document order' : action === 'show' ? 'Show one task' : 'Find the next task')
-    .requiredOption('--change <id>', 'Change name')
-    .option('--json', 'Output as JSON')
-    .option('--store <id>', STORE_OPTION_DESCRIPTION)
-    .addOption(hiddenStorePathOption());
-  if (action === 'show') command.option('--sections <names>', 'Select description, criteria, evidence, custom, or all');
-  command.action(async (...args) => {
-    const options = command.opts<import('../commands/task.js').TaskOptions>();
-    try {
-      const { taskCommand } = await import('../commands/task.js');
-      await taskCommand(action, options, action === 'show' ? args[0] : undefined);
-    } catch (error) {
-      await failWithError(error, { enabled: options.json, fallbackCode: 'task_error' });
-      process.exitCode = 1;
-    }
-  });
-}
+registerTaskCommand(program, { hiddenStorePathOption, failWithError });
 
 // Templates command
 program

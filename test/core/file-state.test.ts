@@ -61,6 +61,67 @@ describe('file-state', () => {
 
       expect(fs.statSync(target).mode & 0o777).toBe(0o600);
     });
+
+    itPosix('preserves existing file mode and avoids forcing 0o600 when mode is preserve', async () => {
+      const existing = path.join(tempDir, 'existing.org');
+      fs.writeFileSync(existing, 'old\n');
+      fs.chmodSync(existing, 0o644);
+
+      await writeFileAtomically(existing, 'new\n', { mode: 'preserve' });
+      expect(fs.statSync(existing).mode & 0o777).toBe(0o644);
+
+      const created = path.join(tempDir, 'created.org');
+      const previousUmask = process.umask(0o022);
+      try {
+        await writeFileAtomically(created, 'hello\n', { mode: 'preserve' });
+      } finally {
+        process.umask(previousUmask);
+      }
+      expect(fs.statSync(created).mode & 0o777).toBe(0o644);
+    });
+
+    it('ignores unsupported fsync errors when writing temp files', async () => {
+      const target = path.join(tempDir, 'tasks.org');
+      const originalOpen = fs.promises.open.bind(fs.promises);
+      const openSpy = vi.spyOn(fs.promises, 'open').mockImplementationOnce(async (...args) => {
+        const handle = await originalOpen(...args);
+        vi.spyOn(handle, 'sync').mockRejectedValueOnce(
+          Object.assign(new Error('sync unsupported'), { code: 'EINVAL' })
+        );
+        return handle;
+      });
+
+      try {
+        await writeFileAtomically(target, '* TODO Task\n', { mode: 'preserve' });
+        expect(fs.readFileSync(target, 'utf-8')).toBe('* TODO Task\n');
+      } finally {
+        openSpy.mockRestore();
+      }
+    });
+
+    it('retries transient Windows rename conflicts during atomic write', async () => {
+      const target = path.join(tempDir, 'tasks.org');
+      const originalRename = fs.promises.rename.bind(fs.promises);
+      let attempts = 0;
+      const renameSpy = vi.spyOn(fs.promises, 'rename').mockImplementation(async (oldPath, newPath) => {
+        attempts++;
+        if (attempts === 1) {
+          throw Object.assign(new Error('busy'), { code: 'EBUSY' });
+        }
+        if (attempts === 2) {
+          throw Object.assign(new Error('perm'), { code: 'EPERM' });
+        }
+        return originalRename(oldPath, newPath);
+      });
+
+      try {
+        await writeFileAtomically(target, 'ok\n', { mode: 'preserve' });
+        expect(attempts).toBe(3);
+        expect(fs.readFileSync(target, 'utf-8')).toBe('ok\n');
+      } finally {
+        renameSpy.mockRestore();
+      }
+    });
   });
 
   describe('acquireFileLock', () => {
@@ -137,6 +198,63 @@ describe('file-state', () => {
         ).rejects.toThrowError(`create-failed:${lockPath}`);
       } finally {
         fs.chmodSync(parent, 0o755);
+      }
+    });
+
+    it('writes JSON lock metadata and surfaces owner details on timeout without stealing aged locks', async () => {
+      const lockPath = path.join(tempDir, '.tasks.org.lock');
+      const lock = await acquireFileLock({ lockPath, errorFor });
+      const metadata = JSON.parse(fs.readFileSync(lockPath, 'utf-8')) as {
+        token: string;
+        pid: number;
+        hostname: string;
+        createdAt: string;
+      };
+      expect(metadata.pid).toBe(process.pid);
+      expect(typeof metadata.token).toBe('string');
+      expect(typeof metadata.hostname).toBe('string');
+      expect(Number.isNaN(Date.parse(metadata.createdAt))).toBe(false);
+
+      const aged = new Date(Date.now() - 120_000);
+      fs.utimesSync(lockPath, aged, aged);
+
+      let capturedOwner: unknown;
+      await expect(
+        acquireFileLock({
+          lockPath,
+          timeoutMs: 60,
+          errorFor: (kind, info) => {
+            capturedOwner = info.owner;
+            return new Error(`${kind}:pid=${info.owner?.pid}`);
+          },
+        })
+      ).rejects.toThrowError(`timeout:pid=${process.pid}`);
+
+      expect(capturedOwner).toEqual(metadata);
+      expect(fs.existsSync(lockPath)).toBe(true);
+      await releaseFileLock(lock, lockPath);
+      expect(fs.existsSync(lockPath)).toBe(false);
+    });
+
+    it('retries transient lock-file removal errors on release', async () => {
+      const lockPath = path.join(tempDir, '.tasks.org.lock');
+      const lock = await acquireFileLock({ lockPath, errorFor });
+      const originalRm = fs.promises.rm.bind(fs.promises);
+      let attempts = 0;
+      const rmSpy = vi.spyOn(fs.promises, 'rm').mockImplementation(async (target, options) => {
+        attempts++;
+        if (attempts === 1) {
+          throw Object.assign(new Error('access denied'), { code: 'EACCES' });
+        }
+        return originalRm(target, options);
+      });
+
+      try {
+        await releaseFileLock(lock, lockPath);
+        expect(attempts).toBe(2);
+        expect(fs.existsSync(lockPath)).toBe(false);
+      } finally {
+        rmSpy.mockRestore();
       }
     });
   });

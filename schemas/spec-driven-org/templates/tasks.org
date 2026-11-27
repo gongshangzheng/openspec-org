@@ -5,7 +5,8 @@
 :PROPERTIES:
 :TASK_ID: 1.1
 :END:
-Describe the work here or in a description heading.
+** 描述
+Describe the work here.
 
 ** 验收标准
 State what observable result demonstrates completion.

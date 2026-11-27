@@ -91,9 +91,16 @@ export class Validator {
   /**
    * Validate spec content from a string (used for pre-write validation of rebuilt specs)
    */
-  async validateSpecContent(specName: string, content: string): Promise<ValidationReport> {
+  async validateSpecContent(
+    specName: string,
+    content: string,
+    options: { format?: 'markdown' | 'org' } = {}
+  ): Promise<ValidationReport> {
     const issues: ValidationIssue[] = [];
     try {
+      if (options.format === 'org') {
+        return this.validateOrgSpec(specName, content, 'file');
+      }
       const parser = new MarkdownParser(content);
       const spec = parser.parseSpec(specName);
       const result = SpecSchema.safeParse(spec);

@@ -1,0 +1,70 @@
+* DONE 实现原生 Org 规格保真写回与内容校验
+:PROPERTIES:
+:TASK_ID: 1.1
+:END:
+在 `src/core/specs-apply-org.ts` 实现基于 `OrgDocument` 行切片的原生 `spec.org` 结构预检、保真重构与退场审计，并扩展 `src/core/validation/validator.ts` 的 `validateSpecContent` 支持 Org 格式校验。
+** 验收标准
+`test/core/specs-apply-org.test.ts` 与相关验证测试确认 Org 新建、`ADDED`/`MODIFIED`/`REMOVED`/`RENAMED` 局部切片保真、文件头与行内标记及代码块保留、`MODIFIED` 场景丢失拦截、损坏主规格报错、退场审计（含 `retire_capabilities: true` 与拒绝分支）以及 `validateSpecContent` Org 模式通过。
+
+** 验收结果
+*** [PASS] 2026-11-27T11:28:29.553Z Org 规格保真写回与内容校验通过全量回归
+:PROPERTIES:
+:RESULT: pass
+:CRITERIA_SHA256: 649b0aa4f868514fed173cbdec625c9a4e8d587b6728fef64951d61d5864da77
+:RECORDED_AT: 2026-11-27T11:28:29.553Z
+:END:
+`node build.js`、`./node_modules/.bin/eslint src/`、`git diff --check` 通过；`test/core/specs-apply-org.test.ts` 与全量回归（260 文件 6551 项通过 + 串行复验 `test/core/init.test.ts` 167/167 通过；1 发布升级文件按条件跳过）均通过，验证 Org 保真切片重建、场景丢失拦截、退场审计与 `validateSpecContent` Org 模式。
+* DONE 接入共享格式感知 delta 对账与跨格式防护
+:PROPERTIES:
+:TASK_ID: 1.2
+:END:
+在 `src/core/specs-apply.ts` 为主入口增加显式格式参数（默认 Markdown）与跨格式写入保护，复用路径包容校验，确保不改变 `src/core/archive.ts` 现有行为。
+** 验收标准
+`test/core/specs-apply.test.ts` 与相关 `archive` 回归测试验证显式格式分发、幂等重复应用、工作流或目标对立格式冲突在写入前直接报错且零改写，并确认原有 Markdown 对账与归档行为保持不变。
+
+** 验收结果
+*** [PASS] 2026-11-27T11:29:16.600Z 格式感知 delta 对账与跨格式保护通过全量回归
+:PROPERTIES:
+:RESULT: pass
+:CRITERIA_SHA256: 7058edba89c181a3398a3648531cef59234e1a253ccefaf439dc96285e198e52
+:RECORDED_AT: 2026-11-27T11:29:16.600Z
+:END:
+`test/core/specs-apply.test.ts`、`test/core/archive.test.ts` 与全量回归复验通过：覆盖显式格式分发、幂等重复同步、工作流/对立扩展名冲突在写入前零改写报错，以及原有 Markdown 对账与归档无回归。
+* DONE 新增 openspec sync CLI 命令与补全技能同步
+:PROPERTIES:
+:TASK_ID: 1.3
+:END:
+新增 `src/commands/sync.ts` 并在 `src/cli/index.ts` 注册 `openspec sync [change-name]`；同步更新 `command-registry.ts`、`store-selection.ts`、`skills/` 及校验哈希。
+** 验收标准
+`test/commands/sync.test.ts`、`test/core/completions/command-registry.test.ts` 和 `test/core/templates/skill-templates-parity.test.ts` 使用真实 CLI 验证 Markdown 与 Org 的 `sync` 文本/JSON、`--store`、保持变更活跃、缺少 delta 或跨格式报错，以及补全与 bash/zsh/fish/powershell 补全脚本生成通过。
+
+** 验收结果
+*** [PASS] 2026-11-27T11:29:41.363Z openspec sync CLI 命令与补全技能同步通过全量回归
+:PROPERTIES:
+:RESULT: pass
+:CRITERIA_SHA256: 1c98f514384b2b170dd5c00c2e3a05abdca87f04ce288bdcca1d3f640ecdee38
+:RECORDED_AT: 2026-11-27T11:29:41.363Z
+:END:
+`node build.js`、`./node_modules/.bin/eslint src/`、`bash`/`zsh`/`fish`/`powershell` 补全脚本生成、`node bin/openspec.js validate sync-native-org-specs --strict` 与 `git diff --check` 均通过；`test/commands/sync.test.ts`、`test/core/completions/`、`test/core/templates/` 与 `test/core/init.test.ts`（串行复验 167/167 通过）随全量回归通过，覆盖 `openspec sync` 文本/JSON、`--store`、保持变更活跃、缺少 delta/跨格式报错及补全与技能同步。
+* DONE 在 Windows 和 Unix 验证跨平台同步旅程
+:PROPERTIES:
+:TASK_ID: 1.4
+:END:
+在 `test/cli-e2e/sync-native-org-specs.test.ts` 用 `.github/workflows/ci.yml` 测试矩阵验证跨平台 Org 与 Markdown 同步端到端旅程。
+** 验收标准
+保留 Windows 与 Unix CI 实测记录：覆盖子目录与 `--store` 同步嵌套 `specs/**/spec.org`、CRLF 保真、越界拦截、跨格式拒绝及 Markdown 同步回归，确认原变更保持活跃且未生成冗余文件。
+** 验收结果
+*** [PARTIAL] 2026-11-27T11:30:07.726Z macOS 端到端同步旅程与全量回归通过，待 Windows 与 Unix CI
+:PROPERTIES:
+:RESULT: partial
+:CRITERIA_SHA256: deea9a87a70affb23e4cf3ac90a664bcb9a56f30396a96a08cbc2003f625bc93
+:RECORDED_AT: 2026-11-27T11:30:07.726Z
+:END:
+新增 `test/cli-e2e/sync-native-org-specs.test.ts` 并完成 macOS 全量复验：260 个测试文件（6551 项）通过 + 串行重跑 `test/core/init.test.ts`（167/167 通过；全量并发期曾出现 `--tools all` 单次 10s 超时）；1 个发布升级测试文件（19 项）按条件跳过。覆盖嵌套 `specs/**/spec.org`、CRLF 保真、`--store`、越界与跨格式拦截、Markdown 回归及变更保持活跃。待提交推送并跑通 Windows 与 Unix 远端 CI 矩阵。
+*** [PASS] 2026-11-27T12:14:59.397Z PR #3 跨平台 CI 矩阵全量通过（Windows、macOS、Linux）
+:PROPERTIES:
+:RESULT: pass
+:CRITERIA_SHA256: deea9a87a70affb23e4cf3ac90a664bcb9a56f30396a96a08cbc2003f625bc93
+:RECORDED_AT: 2026-11-27T12:14:59.397Z
+:END:
+PR #3（`ci/org-task-editing-and-spec-sync`，commit `bd2451ff2cc256c4b5e28f1d3f12ac65374e4075`）GitHub Actions 跨平台 CI（https://github.com/gongshangzheng/openspec-org/actions/runs/45992636153）全量通过：`Lint & Type Check`、`Nix Flake Validation`、`Test (windows-pwsh)`、`Test (macos-bash)`、`Test (linux-bash)`、`Test (linux-bash-node22)`、`Test (linux-bash-node24)`、`Upgrade from releases (ubuntu-latest)`、`Upgrade from releases (windows-latest)` 均返回 success；覆盖 `test/cli-e2e/sync-native-org-specs.test.ts` 中的子目录与 `--store` 同步嵌套 `specs/**/spec.org`、CRLF 保真、越界拦截、跨格式拒绝、Markdown 同步回归，以及原变更保持活跃且未生成冗余文件。
