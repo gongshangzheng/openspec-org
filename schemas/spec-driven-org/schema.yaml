@@ -39,7 +39,7 @@ artifacts:
     description: Implementation tasks with verifiable outcomes
     template: tasks.org
     instruction: |
-      Use the Org template to break implementation into verifiable tasks ordered by dependency. Give each task a TODO heading with a short title, a unique TASK_ID property, and a child acceptance criteria heading. Describe the work in the body or an optional description heading. Do not use Markdown checkboxes.
+      Use the Org template to break implementation into verifiable tasks ordered by dependency. Give each task a TODO heading with a short title, a unique TASK_ID property, a child description heading (** 描述), and a child acceptance criteria heading (** 验收标准). Do not use Markdown checkboxes.
     requires: [specs, design]
 
 apply:

@@ -1,0 +1,63 @@
+* DONE 扩展跨平台文件锁与 Org 任务结构读取契约
+:PROPERTIES:
+:TASK_ID: 1.1
+:END:
+在 `src/core/file-state.ts` 扩展可选权限、锁元数据、临时文件 `fsync` 与 Windows 重命名重试；在 `src/core/parsers/org-tasks.ts` 接入英文别名、重复特殊子节报错、非证据区嵌套任务校验及编辑器结构切片模型。
+** 验收标准
+`test/core/file-state.test.ts` 与 `test/core/parsers/org-tasks.test.ts` 验证锁超时信息与非强行删锁、保留权限的原子写及 Windows 重命名重试、中英文结构子节别名映射、重复特殊子节报错、非证据区嵌套 `TODO`/`DONE` 拒绝及证据区子标题豁免，既有 `store`/`workset` 锁和错误回归通过。
+
+** 验收结果
+*** [PASS] 2026-11-27T11:28:26.145Z 文件锁扩展与 Org 任务结构解析契约在全量回归中通过
+:PROPERTIES:
+:RESULT: pass
+:CRITERIA_SHA256: f03ca25a42fd3f24580ff9e457c27f38a42058d26ddbf74651714e4747a3068f
+:RECORDED_AT: 2026-11-27T11:28:26.145Z
+:END:
+`node build.js`、`./node_modules/.bin/eslint src/`、`git diff --check` 通过；`./node_modules/.bin/vitest run test/core/file-state.test.ts test/core/parsers/org-tasks.test.ts` 与全量回归（259 文件 6558 项通过 + 串行复验 `test/commands/artifact-workflow.test.ts` 87/87 通过；1 发布升级文件按条件跳过）均通过，验证锁元数据、保留权限原子写、英文别名、重复特殊子节报错与非证据区嵌套任务拒绝。
+* DONE 实现 Org 任务编辑、移除与结构变换引擎
+:PROPERTIES:
+:TASK_ID: 1.2
+:END:
+在 `src/core/org-task-editor.ts` 实现基于不可变快照哈希、预览摘要与依赖顺序校验的任务创建、编辑、受保护移除、同组重排、跨组子树移动与拆分引擎。
+** 验收标准
+`test/core/org-task-editor.test.ts` 验证原始字节快照校验与 `previewHash` 防漂移、`create` 默认生成中文子节、`edit` 保留状态与历史证据、`remove` 阻断 `DONE`/含证据/被依赖任务、`reorder` 非连续重排保持未选中相对顺序、`move` 路径寻址/重名报错/子树星级平移、`split` 保留历史证据并更新下游 `DEPENDS_ON`、依赖倒置拒绝，以及 BOM/CRLF/行内标记保真。
+
+** 验收结果
+*** [PASS] 2026-11-27T11:29:12.634Z Org 任务编辑、移除与结构变换引擎通过全量回归
+:PROPERTIES:
+:RESULT: pass
+:CRITERIA_SHA256: d072cb3df22eb5ea03b0a05fdb192870ead66e9a71aae25417f709a0e8927f8e
+:RECORDED_AT: 2026-11-27T11:29:12.634Z
+:END:
+`test/core/org-task-editor.test.ts` 与全量回归复验通过：覆盖原始快照与 `previewHash` 防漂移、`create` 默认中文子节、`edit` 保状态与历史证据、`remove` 三项保护、`reorder` 非连续重排、`move` 分组路径/重名报错/子树星级平移、`split` 继承与下游引用重写、依赖倒置拒写及 BOM/CRLF/行内标记保真。
+* DONE 接入 CLI 写命令、模板对齐与补全技能同步
+:PROPERTIES:
+:TASK_ID: 1.3
+:END:
+抽离 `src/cli/commands/task.ts` 并扩展 `src/commands/task.ts` 与 `src/cli/index.ts` 接入 6 个写子命令与交互/非交互确认边界；对齐 `schemas/spec-driven-org/templates/tasks.org` 与 `schema.yaml`；同步更新补全注册表、`STORE_SELECTION_GUIDANCE`、`skills/` 及校验哈希。
+** 验收标准
+`test/commands/org-task-editing.test.ts`、`test/commands/artifact-workflow.test.ts`、`test/core/completions/command-registry.test.ts` 和 `test/core/templates/skill-templates-parity.test.ts` 使用真实 CLI 验证 `--preview`、TTY 交互确认、非交互须同时传确认参数与 `--preview-hash`、取消退出码 130、非 Org change 拒绝、错写零落盘、`tasks.org` 模板与补全/技能一致，以及 bash/zsh/fish/powershell 补全生成通过。
+
+** 验收结果
+*** [PASS] 2026-11-27T11:29:38.602Z CLI 写命令、模板对齐及补全技能同步通过全量回归
+:PROPERTIES:
+:RESULT: pass
+:CRITERIA_SHA256: 89239769c867e260708aa1485a5cd35b5b8004c454cdb9cd97aaf6da19a1f4b0
+:RECORDED_AT: 2026-11-27T11:29:38.602Z
+:END:
+`node build.js`、`./node_modules/.bin/eslint src/`、`bash`/`zsh`/`fish`/`powershell` 补全脚本生成、`node bin/openspec.js validate edit-native-org-tasks --strict` 与 `git diff --check` 均通过；`test/commands/org-task-editing.test.ts`、`test/commands/artifact-workflow.test.ts`（串行复验 87/87 通过）、`test/core/completions/`、`test/core/templates/` 随全量回归通过，覆盖 `--preview`、TTY/非交互双重确认、取消退出码 130、`tasks.org` 模板对齐及补全与 12 份技能同步。
+* TODO 在 Windows 和 Unix 验证原生任务编辑旅程
+:PROPERTIES:
+:TASK_ID: 1.4
+:END:
+在 `test/cli-e2e/org-task-editing.test.ts` 用 `.github/workflows/ci.yml` 测试矩阵验证 CRLF/BOM、嵌套目录定位、`--store`、预览取消与依赖冲突不改写磁盘。
+** 验收标准
+保留 Windows 与 Unix CI 实测记录：覆盖从新模板脚手架到新建、编辑、移除、非连续重排、跨组移动、拆分、`next` 推进与 `--store` 跨目录写入的全程回归；确认 Markdown 工作流不变且未生成 `tasks.md` 投影。
+** 验收结果
+*** [PARTIAL] 2026-11-27T11:30:04.451Z macOS 端到端旅程与全量回归通过，待 Windows 与 Unix CI
+:PROPERTIES:
+:RESULT: partial
+:CRITERIA_SHA256: 2e232f1bde2563661f890a85fa3ac8bed12a17b88616c960a16bf0ab69ab931c
+:RECORDED_AT: 2026-11-27T11:30:04.451Z
+:END:
+新增 `test/cli-e2e/org-task-editing.test.ts` 并完成 macOS 全量复验：259 个测试文件（6558 项）通过 + 串行重跑 `test/commands/artifact-workflow.test.ts`（87/87 通过；`keeps Markdown by default` 1580ms，全量并发期曾出现单次 10s 超时）；1 个发布升级测试文件（19 项）按条件跳过。覆盖 CRLF+BOM、嵌套目录、`--store`、完整写操作与 `next`、取消与冲突不落盘、Markdown 回归及无 `tasks.md` 投影。待提交推送并跑通 Windows 与 Unix 远端 CI 矩阵。

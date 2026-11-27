@@ -275,7 +275,7 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
   },
   {
     name: 'task',
-    description: 'Read native Org tasks',
+    description: 'Read and edit native Org tasks',
     flags: [],
     subcommands: [
       {
@@ -318,6 +318,269 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
           {
             name: 'change',
             description: 'Change name',
+            takesValue: true,
+          },
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+        ],
+      },
+      {
+        name: 'create',
+        description: 'Create a new native Org task',
+        flags: [
+          {
+            name: 'change',
+            description: 'Change name',
+            takesValue: true,
+          },
+          {
+            name: 'id',
+            description: 'Unique TASK_ID for the new task',
+            takesValue: true,
+          },
+          {
+            name: 'title',
+            description: 'Task title',
+            takesValue: true,
+          },
+          {
+            name: 'description',
+            description: 'Task description body',
+            takesValue: true,
+          },
+          {
+            name: 'criteria',
+            description: 'Acceptance criteria body',
+            takesValue: true,
+          },
+          {
+            name: 'depends-on',
+            description: 'Comma-separated dependency task IDs',
+            takesValue: true,
+          },
+          {
+            name: 'group',
+            description: 'Target group title or path (use "/" for top-level)',
+            takesValue: true,
+          },
+          {
+            name: 'position',
+            description: 'Insertion position within group: start or end',
+            takesValue: true,
+            values: ['start', 'end'],
+          },
+          {
+            name: 'before',
+            description: 'Insert before an existing task ID',
+            takesValue: true,
+          },
+          {
+            name: 'after',
+            description: 'Insert after an existing task ID',
+            takesValue: true,
+          },
+          {
+            name: 'preview',
+            description: 'Preview changes and previewHash without writing',
+          },
+          {
+            name: 'confirm',
+            description: 'Confirm structural write in non-interactive mode',
+          },
+          {
+            name: 'preview-hash',
+            description: 'Expected previewHash from --preview',
+            takesValue: true,
+          },
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+        ],
+      },
+      {
+        name: 'edit',
+        description: 'Edit an existing native Org task without overwriting evidence',
+        acceptsPositional: true,
+        positionals: [{ name: 'task-id' }],
+        flags: [
+          {
+            name: 'change',
+            description: 'Change name',
+            takesValue: true,
+          },
+          {
+            name: 'title',
+            description: 'Updated task title',
+            takesValue: true,
+          },
+          {
+            name: 'description',
+            description: 'Updated description body',
+            takesValue: true,
+          },
+          {
+            name: 'criteria',
+            description: 'Updated acceptance criteria body',
+            takesValue: true,
+          },
+          {
+            name: 'depends-on',
+            description: 'Updated comma-separated dependency task IDs (empty clears)',
+            takesValue: true,
+          },
+          {
+            name: 'custom',
+            description: 'Create or update a custom section (repeatable)',
+            takesValue: true,
+          },
+          {
+            name: 'preview',
+            description: 'Preview changes and previewHash without writing',
+          },
+          {
+            name: 'confirm',
+            description: 'Confirm structural write in non-interactive mode',
+          },
+          {
+            name: 'preview-hash',
+            description: 'Expected previewHash from --preview',
+            takesValue: true,
+          },
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+        ],
+      },
+      {
+        name: 'remove',
+        description: 'Remove an eligible TODO Org task',
+        acceptsPositional: true,
+        positionals: [{ name: 'task-id' }],
+        flags: [
+          {
+            name: 'change',
+            description: 'Change name',
+            takesValue: true,
+          },
+          {
+            name: 'preview',
+            description: 'Preview changes and previewHash without writing',
+          },
+          {
+            name: 'confirm',
+            description: 'Confirm structural write in non-interactive mode',
+          },
+          {
+            name: 'preview-hash',
+            description: 'Expected previewHash from --preview',
+            takesValue: true,
+          },
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+        ],
+      },
+      {
+        name: 'reorder',
+        description: 'Reorder selected tasks within the same group',
+        acceptsPositional: true,
+        positionals: [{ name: 'task-ids' }],
+        flags: [
+          {
+            name: 'change',
+            description: 'Change name',
+            takesValue: true,
+          },
+          {
+            name: 'preview',
+            description: 'Preview changes and previewHash without writing',
+          },
+          {
+            name: 'confirm',
+            description: 'Confirm structural write in non-interactive mode',
+          },
+          {
+            name: 'preview-hash',
+            description: 'Expected previewHash from --preview',
+            takesValue: true,
+          },
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+        ],
+      },
+      {
+        name: 'move',
+        description: 'Move a task subtree to another group or position',
+        acceptsPositional: true,
+        positionals: [{ name: 'task-id' }],
+        flags: [
+          {
+            name: 'change',
+            description: 'Change name',
+            takesValue: true,
+          },
+          {
+            name: 'group',
+            description: 'Target group title or path (use "/" for top-level)',
+            takesValue: true,
+          },
+          {
+            name: 'position',
+            description: 'Target position within group: start or end',
+            takesValue: true,
+            values: ['start', 'end'],
+          },
+          {
+            name: 'before',
+            description: 'Move before an existing task ID',
+            takesValue: true,
+          },
+          {
+            name: 'after',
+            description: 'Move after an existing task ID',
+            takesValue: true,
+          },
+          {
+            name: 'preview',
+            description: 'Preview changes and previewHash without writing',
+          },
+          {
+            name: 'confirm',
+            description: 'Confirm structural write in non-interactive mode',
+          },
+          {
+            name: 'preview-hash',
+            description: 'Expected previewHash from --preview',
+            takesValue: true,
+          },
+          COMMON_FLAGS.json,
+          COMMON_FLAGS.store,
+        ],
+      },
+      {
+        name: 'split',
+        description: 'Split a TODO task into two or more replacement tasks',
+        acceptsPositional: true,
+        positionals: [{ name: 'task-id' }],
+        flags: [
+          {
+            name: 'change',
+            description: 'Change name',
+            takesValue: true,
+          },
+          {
+            name: 'into',
+            description: 'Replacement task as <id>=<title> or JSON object (repeatable, at least 2)',
+            takesValue: true,
+          },
+          {
+            name: 'preview',
+            description: 'Preview changes and previewHash without writing',
+          },
+          {
+            name: 'confirm',
+            description: 'Confirm structural write in non-interactive mode',
+          },
+          {
+            name: 'preview-hash',
+            description: 'Expected previewHash from --preview',
             takesValue: true,
           },
           COMMON_FLAGS.json,

@@ -773,6 +773,10 @@ rules:
       expect(templates[id].source).toBe('package');
       expect(path.basename(templates[id].path)).toBe(id === 'specs' ? 'spec.org' : output);
     }
+    expect(templates.tasks).toBeDefined();
+    const tasksTemplate = await fs.readFile(templates.tasks.path, 'utf-8');
+    expect(tasksTemplate).toContain('** 描述');
+    expect(tasksTemplate).toContain('** 验收标准');
     const existing = await status('markdown-change');
     expect(existing.schemaName).toBe('spec-driven');
     expect(existing.artifactPaths).toEqual(before.artifactPaths);
